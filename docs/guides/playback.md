@@ -21,10 +21,10 @@ stack.
 Pass a player to `KittenTTS.create()`, then call `speak()`:
 
 ```tsx
-await tts.speak('Read this sentence.', KittenVoice.Bella, 1.0);
+await tts.speak('Read this sentence.', { voice: 'bella', speed: 1.0 });
 ```
 
-The optional third argument is speed. Valid values are `0.5` to `2.0`.
+`speed` is optional. Valid values are `0.5` to `2.0`.
 
 ## Expo Audio
 

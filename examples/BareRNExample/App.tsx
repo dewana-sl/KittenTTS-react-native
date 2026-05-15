@@ -13,13 +13,13 @@ import {
 import Sound from 'react-native-sound';
 import {
   KittenTTS,
-  KittenModel,
-  KittenVoice,
   KittenTTSResult,
   modelDisplayName,
   voiceDisplayName,
-  ALL_VOICES,
+  ALL_VOICE_IDS,
   createRNSoundPlayer,
+  type KittenTTSModelId,
+  type KittenTTSVoiceId,
 } from '@kittentts/react-native';
 
 type AppState =
@@ -30,12 +30,7 @@ type AppState =
   | {kind: 'playing'}
   | {kind: 'error'; message: string};
 
-const MODELS: KittenModel[] = [
-  KittenModel.Nano,
-  KittenModel.NanoInt8,
-  KittenModel.Micro,
-  KittenModel.Mini,
-];
+const MODELS: KittenTTSModelId[] = ['nano', 'nano-int8', 'micro', 'mini'];
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -47,8 +42,8 @@ export default function App() {
   const [inputText, setInputText] = useState(
     'Hello! Welcome to KittenTTS, a fast on-device text-to-speech engine.',
   );
-  const [selectedModel, setSelectedModel] = useState(KittenModel.Nano);
-  const [selectedVoice, setSelectedVoice] = useState(KittenVoice.Bella);
+  const [selectedModel, setSelectedModel] = useState<KittenTTSModelId>('nano');
+  const [selectedVoice, setSelectedVoice] = useState<KittenTTSVoiceId>('bella');
   const [selectedSpeed, setSelectedSpeed] = useState(1.0);
   const [result, setResult] = useState<KittenTTSResult | null>(null);
 
@@ -59,7 +54,7 @@ export default function App() {
     state.kind === 'playing';
 
   const initTTS = useCallback(
-    async (model: KittenModel) => {
+    async (model: KittenTTSModelId) => {
       try {
         await ttsRef.current?.dispose();
         setState({kind: 'preparing'});
@@ -117,7 +112,7 @@ export default function App() {
     }
     try {
       setState({kind: 'generating'});
-      const res = await tts.generate(inputText, selectedVoice, selectedSpeed);
+      const res = await tts.generate(inputText, { voice: selectedVoice, speed: selectedSpeed });
       setResult(res);
       setState({kind: 'idle'});
     } catch (error: unknown) {
@@ -131,7 +126,7 @@ export default function App() {
     }
     try {
       setState({kind: 'playing'});
-      const res = await tts.speak(inputText, selectedVoice, selectedSpeed);
+      const res = await tts.speak(inputText, { voice: selectedVoice, speed: selectedSpeed });
       setResult(res);
       setState({kind: 'idle'});
     } catch (error: unknown) {
@@ -140,7 +135,7 @@ export default function App() {
   }, [tts, inputText, selectedVoice, selectedSpeed]);
 
   const handleModelChange = useCallback(
-    (model: KittenModel) => {
+    (model: KittenTTSModelId) => {
       setSelectedModel(model);
       initTTS(model);
     },
@@ -199,7 +194,7 @@ export default function App() {
         <View style={styles.section}>
           <Text style={styles.label}>Voice</Text>
           <View style={styles.chipRow}>
-            {ALL_VOICES.map(voice => (
+            {ALL_VOICE_IDS.map(voice => (
               <TouchableOpacity
                 key={voice}
                 style={[

@@ -11,8 +11,8 @@ ONNX Runtime session.
 
 ```tsx
 const tts = await KittenTTS.create({
-  model: KittenModel.NanoInt8,
-  defaultVoice: KittenVoice.Luna,
+  model: 'nano-int8',
+  defaultVoice: 'luna',
   speed: 1.1,
   player: createExpoAudioPlayer(ExpoAudio),
 });
@@ -35,8 +35,8 @@ const tts = await KittenTTS.create(options, (progress, info) => {
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `model` | `KittenModel.Nano` | Model variant |
-| `defaultVoice` | `KittenVoice.Bella` | Voice used when omitted |
+| `model` | `'nano'` | Model variant |
+| `defaultVoice` | `'bella'` | Voice used when omitted |
 | `speed` | `1.0` | Speech speed from `0.5` to `2.0` |
 | `storageDirectory` | Document directory | Custom model cache root |
 | `modelBaseURL` | Hugging Face URL | Custom mirror/self-hosted model directory |
@@ -51,33 +51,38 @@ const tts = await KittenTTS.create(options, (progress, info) => {
 | `forceRedownload` | `false` | Redownload model files before creating |
 | `player` | none | Required for `speak()` and `play()` |
 
-## `tts.generate(text, voice?, speed?)`
+## `tts.generate(text, options?)`
 
 Synthesizes speech and returns a `KittenTTSResult` without playing it.
 
 ```tsx
-const result = await tts.generate('Save this as audio.', KittenVoice.Jasper);
+const result = await tts.generate('Save this as audio.', {
+  voice: 'jasper',
+  speed: 1.0,
+});
 ```
 
 `wordTimings` may be empty when duration output is unavailable or when the text
 is split across multiple model chunks.
 
-## `tts.generateStreaming(text, voice?, speed?)`
+## `tts.stream(text, options?)`
 
 Synthesizes long text sentence by sentence.
 
 ```tsx
-for await (const chunk of tts.generateStreaming(longText, KittenVoice.Luna)) {
+for await (const chunk of tts.stream(longText, { voice: 'luna' })) {
   await tts.play(chunk);
 }
 ```
 
-## `tts.speak(text, voice?, speed?)`
+`generateStreaming(text, voice?, speed?)` is kept as a compatibility alias.
+
+## `tts.speak(text, options?)`
 
 Synthesizes speech and plays it through the configured player.
 
 ```tsx
-await tts.speak('Play this sentence.', KittenVoice.Rosie, 1.1);
+await tts.speak('Play this sentence.', { voice: 'rosie', speed: 1.1 });
 ```
 
 ## `tts.play(result, options?)`
@@ -113,10 +118,12 @@ await tts.play(result, {
 | `KittenTTS.isModelCached(config?)` | Checks whether model files exist locally |
 | `KittenTTS.isModelDownloaded(config?)` | App-facing alias for model cache checks |
 | `KittenTTS.getModelCacheInfo(config?)` | Returns cache paths and file existence |
+| `KittenTTS.cacheInfo(config?)` | Preferred alias for cache paths and file existence |
 | `KittenTTS.predownload(config?, onProgress?)` | Downloads model and phonemizer assets |
 | `KittenTTS.prewarm(config?, onProgress?)` | Deprecated alias for `predownload()` |
 | `KittenTTS.redownloadModel(config?, onProgress?)` | Deletes and downloads the selected model |
 | `KittenTTS.clearModelCache(config?)` | Deletes cached files for the selected model |
+| `KittenTTS.validateAssets(config?)` | Throws if required model files are missing |
 
 ## Bundled Asset Helper
 
@@ -132,7 +139,7 @@ as normal filesystem paths.
 
 ```tsx
 const config = await createBundledAssetConfig(manifest, {
-  model: KittenModel.NanoInt8,
+  model: 'nano-int8',
 });
 ```
 

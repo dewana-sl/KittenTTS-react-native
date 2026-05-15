@@ -72,14 +72,13 @@ Import the generated manifest and create a config:
 
 ```tsx
 import {
-  KittenModel,
   KittenTTS,
   createBundledAssetConfig,
 } from '@kittentts/react-native';
 import manifest from './assets/kittentts/manifest.json';
 
 const config = await createBundledAssetConfig(manifest, {
-  model: KittenModel.NanoInt8,
+  model: 'nano-int8',
 });
 
 const tts = await KittenTTS.create(config);
@@ -93,10 +92,10 @@ For a full app, see
 If your app has its own asset-copying layer, you can provide paths yourself:
 
 ```tsx
-import { CEPhonemizer, KittenModel, KittenTTS } from '@kittentts/react-native';
+import { CEPhonemizer, KittenTTS } from '@kittentts/react-native';
 
 const tts = await KittenTTS.create({
-  model: KittenModel.NanoInt8,
+  model: 'nano-int8',
   modelFiles: {
     onnxPath: `${assetDir}/kitten-tts-nano-0.8-int8/kitten_tts_nano_v0_8.onnx`,
     voicesPath: `${assetDir}/kitten-tts-nano-0.8-int8/voices.npz`,

@@ -1,4 +1,4 @@
-import { KittenModel } from './KittenModel';
+import { KittenModel, normalizeModel } from './KittenModel';
 import { CEPhonemizer } from './phonemizer/CEPhonemizer.web';
 import type { KittenTTSConfig } from './KittenTTSConfig.web';
 import type { KittenPhonemizerProtocol } from './phonemizer/types';
@@ -140,10 +140,11 @@ function manifestModelFiles(
 }
 
 function parseModel(model: KittenModel | string): KittenModel {
-  if (Object.values(KittenModel).includes(model as KittenModel)) {
-    return model as KittenModel;
+  try {
+    return normalizeModel(model as never);
+  } catch {
+    throw new Error(`Unknown KittenTTS model in bundled assets manifest: ${model}`);
   }
-  throw new Error(`Unknown KittenTTS model in bundled assets manifest: ${model}`);
 }
 
 function joinPath(basePath: string, filePath: string): string {

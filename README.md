@@ -118,10 +118,18 @@ import * as ExpoAudio from 'expo-audio';
 import { KittenTTS, createExpoAudioPlayer } from '@kittentts/react-native';
 
 const tts = await KittenTTS.create({
+  model: 'mini',
+  defaultVoice: 'luna',
   player: createExpoAudioPlayer(ExpoAudio),
 });
 
-await tts.speak('This voice is generated on the device.');
+const result = await tts.generate('This voice is generated on the device.', {
+  voice: 'luna',
+  speed: 1.1,
+});
+
+await tts.play(result);
+await tts.speak('Hello again.', { voice: 'bella', speed: 1.0 });
 ```
 
 Play audio in a web build:
@@ -190,21 +198,21 @@ If the app opens in Expo Go, stop it and run `npx expo run:ios` or
 - [Playback helpers](docs/guides/playback.md) for Expo Audio, React Native Sound, and custom audio layers.
 - [WAV output](docs/reference/api.md#kittenttsresult) as raw PCM samples, bytes, or base64.
 - [Word timings](docs/guides/word-timings.md) for read-aloud highlighting.
-- [Streaming generation](docs/reference/api.md#ttsgeneratestreamingtext-voice-speed) for longer text.
+- [Streaming generation](docs/reference/api.md#ttsstreamtext-options) for longer text.
 
 ---
 
 ## Supported Models
 
-Start with `NanoInt8` for the smallest download. Use larger models when quality
+Start with `nano-int8` for the smallest download. Use larger models when quality
 matters more than size.
 
-| Model | Enum | Parameters | Approx download | Use case |
+| Model | ID | Parameters | Approx download | Use case |
 | --- | --- | --- | --- | --- |
-| Nano int8 | `KittenModel.NanoInt8` | 15M | 28 MB | Smallest app/download size |
-| Nano fp32 | `KittenModel.Nano` | 15M | 59 MB | Nano quality without quantization |
-| Micro | `KittenModel.Micro` | 40M | 44 MB | Better quality, still compact |
-| Mini | `KittenModel.Mini` | 80M | 83 MB | Highest quality option |
+| Nano int8 | `'nano-int8'` | 15M | 28 MB | Smallest app/download size |
+| Nano fp32 | `'nano'` | 15M | 59 MB | Nano quality without quantization |
+| Micro | `'micro'` | 40M | 44 MB | Better quality, still compact |
+| Mini | `'mini'` | 80M | 83 MB | Highest quality option |
 
 [Models and voices →](docs/reference/models.md)
 
@@ -215,8 +223,8 @@ Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
 ```
 
 ```tsx
-await tts.speak('Luna speaking.', KittenVoice.Luna);
-await tts.speak('Slower Bruno speaking.', KittenVoice.Bruno, 0.85);
+await tts.speak('Luna speaking.', { voice: 'luna' });
+await tts.speak('Slower Bruno speaking.', { voice: 'bruno', speed: 0.85 });
 ```
 
 ---

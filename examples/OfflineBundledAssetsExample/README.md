@@ -109,9 +109,7 @@ files are.
 ```typescript
 import * as ExpoAudio from 'expo-audio';
 import {
-  KittenModel,
   KittenTTS,
-  KittenVoice,
   createBundledAssetConfig,
   createExpoAudioPlayer,
   type KittenTTSBundledAssetsManifest,
@@ -121,8 +119,8 @@ import manifestJson from './assets/kittentts/manifest.json';
 const manifest = manifestJson as KittenTTSBundledAssetsManifest;
 
 const config = await createBundledAssetConfig(manifest, {
-  model: KittenModel.NanoInt8,
-  defaultVoice: KittenVoice.Bella,
+  model: 'nano-int8',
+  defaultVoice: 'bella',
 });
 
 const tts = await KittenTTS.create({

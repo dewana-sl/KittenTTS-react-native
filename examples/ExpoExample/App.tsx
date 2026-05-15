@@ -13,14 +13,14 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import * as ExpoAudio from 'expo-audio';
 import {
-  ALL_VOICES,
-  KittenModel,
+  ALL_VOICE_IDS,
   KittenTTS,
   KittenTTSResult,
-  KittenVoice,
   createExpoAudioPlayer,
   modelDisplayName,
   voiceDisplayName,
+  type KittenTTSModelId,
+  type KittenTTSVoiceId,
 } from '@kittentts/react-native';
 
 type WorkState =
@@ -32,12 +32,7 @@ type WorkState =
   | { kind: 'playing' }
   | { kind: 'error'; message: string };
 
-const MODELS = [
-  KittenModel.Nano,
-  KittenModel.NanoInt8,
-  KittenModel.Micro,
-  KittenModel.Mini,
-];
+const MODELS: KittenTTSModelId[] = ['nano', 'nano-int8', 'micro', 'mini'];
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -45,8 +40,8 @@ export default function App() {
   const [tts, setTts] = useState<KittenTTS | null>(null);
   const ttsRef = useRef<KittenTTS | null>(null);
   const [state, setState] = useState<WorkState>({ kind: 'booting' });
-  const [model, setModel] = useState(KittenModel.Nano);
-  const [voice, setVoice] = useState(KittenVoice.Bella);
+  const [model, setModel] = useState<KittenTTSModelId>('nano');
+  const [voice, setVoice] = useState<KittenTTSVoiceId>('bella');
   const [speed, setSpeed] = useState(1);
   const [text, setText] = useState('Hello from KittenTTS. This is running on device with Expo.');
   const [result, setResult] = useState<KittenTTSResult | null>(null);
@@ -55,7 +50,7 @@ export default function App() {
   const busy = state.kind === 'booting' || state.kind === 'preparing' || state.kind === 'loading' || state.kind === 'generating' || state.kind === 'playing';
   const player = useMemo(() => createExpoAudioPlayer(ExpoAudio), []);
 
-  const loadModel = useCallback(async (nextModel: KittenModel) => {
+  const loadModel = useCallback(async (nextModel: KittenTTSModelId) => {
     setState({ kind: 'preparing' });
     setResult(null);
 
@@ -104,7 +99,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectModel = useCallback((nextModel: KittenModel) => {
+  const selectModel = useCallback((nextModel: KittenTTSModelId) => {
     setModel(nextModel);
     loadModel(nextModel);
   }, [loadModel]);
@@ -113,7 +108,7 @@ export default function App() {
     if (!tts || !text.trim()) return;
     setState({ kind: 'generating' });
     try {
-      const nextResult = await tts.generate(text, voice, speed);
+      const nextResult = await tts.generate(text, { voice, speed });
       setResult(nextResult);
       setState({ kind: 'ready' });
     } catch (error) {
@@ -125,7 +120,7 @@ export default function App() {
     if (!tts || !text.trim()) return;
     setState({ kind: 'playing' });
     try {
-      const nextResult = await tts.speak(text, voice, speed);
+      const nextResult = await tts.speak(text, { voice, speed });
       setResult(nextResult);
       setState({ kind: 'ready' });
     } catch (error) {
@@ -168,7 +163,7 @@ export default function App() {
 
         <OptionGroup
           label="Voice"
-          values={ALL_VOICES}
+          values={ALL_VOICE_IDS}
           selected={voice}
           disabled={busy}
           getLabel={voiceDisplayName}

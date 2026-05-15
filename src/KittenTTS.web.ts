@@ -11,7 +11,7 @@ import {
 } from './KittenTTSError';
 import { KittenTTSResult } from './KittenTTSResult';
 import { KittenModel, speedPrior } from './KittenModel';
-import { KittenVoice } from './KittenVoice';
+import { KittenVoice, type KittenTTSVoiceInput, normalizeVoice } from './KittenVoice';
 import type { KittenWordTiming } from './KittenWordTiming';
 import { TTSEngine } from './engine/TTSEngine.web';
 import { splitSentences } from './engine/SentenceSplitter';
@@ -59,6 +59,13 @@ export interface KittenTTSCreateOptions extends KittenTTSConfig {
    */
   player?: AudioPlayer;
 }
+
+export interface KittenTTSGenerateOptions {
+  voice?: KittenTTSVoiceInput;
+  speed?: number;
+}
+
+export interface KittenTTSSpeakOptions extends KittenTTSGenerateOptions, AudioPlayOptions {}
 
 /**
  * The KittenTTS speech-synthesis engine for React Native Web runtimes.
@@ -189,18 +196,21 @@ export class KittenTTS {
    * @param speed - Speed multiplier (0.5--2.0). Defaults to the config's `speed`.
    * @returns A {@link KittenTTSResult} containing PCM samples and metadata.
    */
+  async generate(text: string, options?: KittenTTSGenerateOptions): Promise<KittenTTSResult>;
+  async generate(text: string, voice?: KittenTTSVoiceInput, speed?: number): Promise<KittenTTSResult>;
   async generate(
     text: string,
-    voice?: KittenVoice,
-    speed?: number,
+    optionsOrVoice?: KittenTTSGenerateOptions | KittenTTSVoiceInput,
+    legacySpeed?: number,
   ): Promise<KittenTTSResult> {
     if (this.disposed) throw KittenTTSError.engineNotReady();
 
     const trimmed = text.trim();
     if (!trimmed) throw KittenTTSError.emptyInput();
 
-    const selectedVoice = voice ?? this.config.defaultVoice;
-    const selectedSpeed = Math.min(Math.max(speed ?? this.config.speed, 0.5), 2.0);
+    const options = normalizeGenerateOptions(optionsOrVoice, legacySpeed);
+    const selectedVoice = normalizeVoice(options.voice ?? this.config.defaultVoice);
+    const selectedSpeed = Math.min(Math.max(options.speed ?? this.config.speed, 0.5), 2.0);
 
     const output = await this.engine.generate(
       trimmed,
@@ -230,21 +240,34 @@ export class KittenTTS {
    * {@link KittenTTSResult} as soon as that sentence is ready, which lets apps
    * start playback before a long text has fully generated.
    */
+  generateStreaming(text: string, options?: KittenTTSGenerateOptions): AsyncGenerator<KittenTTSResult, void, void>;
+  generateStreaming(text: string, voice?: KittenTTSVoiceInput, speed?: number): AsyncGenerator<KittenTTSResult, void, void>;
   async *generateStreaming(
     text: string,
-    voice?: KittenVoice,
-    speed?: number,
+    optionsOrVoice?: KittenTTSGenerateOptions | KittenTTSVoiceInput,
+    legacySpeed?: number,
   ): AsyncGenerator<KittenTTSResult, void, void> {
     if (this.disposed) throw KittenTTSError.engineNotReady();
 
     const trimmed = text.trim();
     if (!trimmed) throw KittenTTSError.emptyInput();
 
-    const selectedVoice = voice ?? this.config.defaultVoice;
-    const selectedSpeed = Math.min(Math.max(speed ?? this.config.speed, 0.5), 2.0);
+    const options = normalizeGenerateOptions(optionsOrVoice, legacySpeed);
+    const selectedVoice = normalizeVoice(options.voice ?? this.config.defaultVoice);
+    const selectedSpeed = Math.min(Math.max(options.speed ?? this.config.speed, 0.5), 2.0);
     for (const sentence of splitSentences(trimmed)) {
       yield await this.generate(sentence, selectedVoice, selectedSpeed);
     }
+  }
+
+  stream(text: string, options?: KittenTTSGenerateOptions): AsyncGenerator<KittenTTSResult, void, void>;
+  stream(text: string, voice?: KittenTTSVoiceInput, speed?: number): AsyncGenerator<KittenTTSResult, void, void>;
+  stream(
+    text: string,
+    optionsOrVoice?: KittenTTSGenerateOptions | KittenTTSVoiceInput,
+    legacySpeed?: number,
+  ): AsyncGenerator<KittenTTSResult, void, void> {
+    return this.generateStreaming(text, optionsOrVoice as KittenTTSVoiceInput, legacySpeed);
   }
 
   /**
@@ -257,13 +280,16 @@ export class KittenTTS {
    * @param speed - Speed multiplier (0.5--2.0).
    * @returns The generated {@link KittenTTSResult}.
    */
+  async speak(text: string, options?: KittenTTSSpeakOptions): Promise<KittenTTSResult>;
+  async speak(text: string, voice?: KittenTTSVoiceInput, speed?: number): Promise<KittenTTSResult>;
   async speak(
     text: string,
-    voice?: KittenVoice,
-    speed?: number,
+    optionsOrVoice?: KittenTTSSpeakOptions | KittenTTSVoiceInput,
+    legacySpeed?: number,
   ): Promise<KittenTTSResult> {
-    const result = await this.generate(text, voice, speed);
-    await this.play(result);
+    const options = normalizeSpeakOptions(optionsOrVoice, legacySpeed);
+    const result = await this.generate(text, options);
+    await this.play(result, options);
     return result;
   }
 
@@ -284,6 +310,22 @@ export class KittenTTS {
   /** Stop any currently active audio playback. */
   async stopSpeaking(): Promise<void> {
     await this.audioOutput.stop();
+  }
+
+  async stop(): Promise<void> {
+    await this.stopSpeaking();
+  }
+
+  async pauseSpeaking(): Promise<void> {
+    await this.audioOutput.pause();
+  }
+
+  async resumeSpeaking(): Promise<void> {
+    await this.audioOutput.resume();
+  }
+
+  get isSpeaking(): boolean {
+    return this.audioOutput.isPlaying();
   }
 
   /** Check if the model files are already cached on disk. */
@@ -315,6 +357,10 @@ export class KittenTTS {
       resolved.storageDirectory,
       resolved.storage,
     );
+  }
+
+  static async cacheInfo(config?: KittenTTSConfig): Promise<ModelCacheInfo> {
+    return KittenTTS.getModelCacheInfo(config);
   }
 
   /** Alias for `isModelCached()` with clearer app-facing wording. */
@@ -413,6 +459,13 @@ export class KittenTTS {
     await KittenTTS.predownload(config, onProgress);
   }
 
+  static async validateAssets(config?: KittenTTSConfig): Promise<void> {
+    const info = await KittenTTS.getModelCacheInfo(config);
+    if (!info.isCached) {
+      throw KittenTTSError.modelFileNotFound(info.directory);
+    }
+  }
+
   /** Release the ONNX session and free resources. */
   async dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
@@ -424,6 +477,26 @@ export class KittenTTS {
     })();
     return this.disposePromise;
   }
+}
+
+function normalizeGenerateOptions(
+  optionsOrVoice?: KittenTTSGenerateOptions | KittenTTSVoiceInput,
+  legacySpeed?: number,
+): KittenTTSGenerateOptions {
+  if (
+    typeof optionsOrVoice === 'string' ||
+    optionsOrVoice === undefined
+  ) {
+    return { voice: optionsOrVoice, speed: legacySpeed };
+  }
+  return optionsOrVoice;
+}
+
+function normalizeSpeakOptions(
+  optionsOrVoice?: KittenTTSSpeakOptions | KittenTTSVoiceInput,
+  legacySpeed?: number,
+): KittenTTSSpeakOptions {
+  return normalizeGenerateOptions(optionsOrVoice, legacySpeed) as KittenTTSSpeakOptions;
 }
 
 function normalizeWordTimingsToDuration(

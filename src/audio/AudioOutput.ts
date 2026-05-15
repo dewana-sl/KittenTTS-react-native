@@ -14,6 +14,12 @@ export interface AudioPlayer {
   playFile(filePath: string, onPlaybackStart?: () => void): Promise<void>;
   /** Stop current playback. */
   stop(): Promise<void>;
+  /** Pause current playback when supported. */
+  pause?(): Promise<void>;
+  /** Resume current playback when supported. */
+  resume?(): Promise<void>;
+  /** Return current playback state when supported. */
+  isPlaying?(): boolean;
 }
 
 export interface AudioPlayOptions {
@@ -52,6 +58,7 @@ interface ExpoAudioModule {
 
 interface RNSoundInstance {
   play(callback: (success: boolean) => void): void;
+  pause?(): void;
   stop(): void;
   release(): void;
 }
@@ -126,6 +133,29 @@ export class AudioOutput {
       }
     }
     this.playing = false;
+  }
+
+  async pause(): Promise<void> {
+    if (!this.player?.pause || !this.playing) return;
+    try {
+      await this.player.pause();
+    } catch (error) {
+      throw KittenTTSError.playbackFailed(errorMessage(error), error);
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (!this.player?.resume) return;
+    try {
+      await this.player.resume();
+      this.playing = true;
+    } catch (error) {
+      throw KittenTTSError.playbackFailed(errorMessage(error), error);
+    }
+  }
+
+  isPlaying(): boolean {
+    return this.player?.isPlaying?.() ?? this.playing;
   }
 }
 
@@ -241,6 +271,15 @@ export function createExpoAudioPlayer(Audio: ExpoAudioModule): AudioPlayer {
     async stop(): Promise<void> {
       stopCurrent();
     },
+    async pause(): Promise<void> {
+      current?.player.pause();
+    },
+    async resume(): Promise<void> {
+      current?.player.play();
+    },
+    isPlaying(): boolean {
+      return Boolean(current && !current.settled);
+    },
   };
 }
 
@@ -295,6 +334,12 @@ export function createRNSoundPlayer(Sound: RNSoundConstructor): AudioPlayer {
         currentSound.release();
         currentSound = null;
       }
+    },
+    async pause(): Promise<void> {
+      currentSound?.pause?.();
+    },
+    isPlaying(): boolean {
+      return currentSound !== null;
     },
   };
 }

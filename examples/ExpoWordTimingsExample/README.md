@@ -70,7 +70,7 @@ cache.
 Use this flow when you want synced word highlighting:
 
 ```typescript
-const result = await tts.generate(text, voice);
+const result = await tts.generate(text, { voice });
 setResult(result);
 
 await tts.play(result, {
@@ -84,7 +84,7 @@ each word's `startTime` / `endTime` against the playback timer.
 For long documents, generate smaller chunks instead of one large string:
 
 ```typescript
-for await (const chunk of tts.generateStreaming(longText, voice)) {
+for await (const chunk of tts.stream(longText, { voice })) {
   await tts.play(chunk);
 }
 ```

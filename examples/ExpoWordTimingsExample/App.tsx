@@ -12,15 +12,16 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import * as ExpoAudio from 'expo-audio';
 import {
-  KittenModel,
+  ALL_VOICE_IDS,
   KittenTTS,
   KittenTTSResult,
   KittenTTSErrorCode,
-  KittenVoice,
   createExpoAudioPlayer,
   isKittenTTSError,
   modelDisplayName,
   voiceDisplayName,
+  type KittenTTSModelId,
+  type KittenTTSVoiceId,
 } from '@kittentts/react-native';
 import type { KittenWordTiming } from '@kittentts/react-native';
 
@@ -31,19 +32,14 @@ type Status =
   | { kind: 'working'; message: string }
   | { kind: 'error'; message: string };
 
-const MODEL = KittenModel.NanoInt8;
-const VOICES = [
-  KittenVoice.Bella,
-  KittenVoice.Luna,
-  KittenVoice.Jasper,
-  KittenVoice.Leo,
-];
+const MODEL: KittenTTSModelId = 'nano-int8';
+const VOICES: KittenTTSVoiceId[] = ['bella', 'luna', 'jasper', 'leo'];
 
 export default function App() {
   const [text, setText] = useState(
     'KittenTTS runs fully on device and now returns word-level timestamps. Generate this paragraph to see when each word starts and ends in the audio.',
   );
-  const [voice, setVoice] = useState(KittenVoice.Bella);
+  const [voice, setVoice] = useState<KittenTTSVoiceId>('bella');
   const [status, setStatus] = useState<Status>({
     kind: 'idle',
     message: 'Ready to load the model.',
@@ -98,7 +94,7 @@ export default function App() {
       setActiveWordIndex(null);
       const tts = await getTTS();
       setStatus({ kind: 'working', message: 'Generating audio...' });
-      const nextResult = await tts.generate(text, voice);
+      const nextResult = await tts.generate(text, { voice });
       setResult(nextResult);
       setStatus({ kind: 'working', message: 'Playing with word highlighting...' });
       await tts.play(nextResult, {
@@ -123,7 +119,7 @@ export default function App() {
       setActiveWordIndex(null);
       const tts = await getTTS();
       setStatus({ kind: 'working', message: 'Generating audio...' });
-      const nextResult = await tts.generate(text, voice);
+      const nextResult = await tts.generate(text, { voice });
       setResult(nextResult);
       setStatus({ kind: 'idle', message: 'Generated audio with word timings.' });
     } catch (error) {

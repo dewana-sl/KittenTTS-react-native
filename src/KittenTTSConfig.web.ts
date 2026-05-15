@@ -1,5 +1,5 @@
-import { KittenModel } from './KittenModel';
-import { KittenVoice } from './KittenVoice';
+import { KittenModel, type KittenTTSModelInput, normalizeModel } from './KittenModel';
+import { KittenVoice, type KittenTTSVoiceInput, normalizeVoice } from './KittenVoice';
 import { CEPhonemizer } from './phonemizer/CEPhonemizer.web';
 import type { KittenPhonemizerProtocol } from './phonemizer/types';
 import type { ModelPaths } from './loader/ModelDownloader.web';
@@ -8,7 +8,10 @@ import { defaultAssetStorage, type AssetStorage } from './storage/AssetStorage';
 export type KittenTTSModelFiles = ModelPaths;
 
 export type ResolvedKittenTTSConfig =
-  Required<Omit<KittenTTSConfig, 'modelFiles' | 'ortWasmPath'>> &
+  Required<Omit<KittenTTSConfig, 'model' | 'defaultVoice' | 'modelFiles' | 'ortWasmPath'>> & {
+    model: KittenModel;
+    defaultVoice: KittenVoice;
+  } &
   Pick<KittenTTSConfig, 'modelFiles' | 'ortWasmPath'>;
 
 /**
@@ -17,19 +20,19 @@ export type ResolvedKittenTTSConfig =
  * @example
  * ```typescript
  * const config: KittenTTSConfig = {
- *   model: KittenModel.Nano,
- *   defaultVoice: KittenVoice.Luna,
+ *   model: 'nano',
+ *   defaultVoice: 'luna',
  *   speed: 1.1,
  * };
  * const tts = await KittenTTS.create(config);
  * ```
  */
 export interface KittenTTSConfig {
-  /** The model variant to use. Defaults to {@link KittenModel.Nano}. */
-  model?: KittenModel;
+  /** The model variant to use. Defaults to `'nano'`. */
+  model?: KittenTTSModelInput;
 
-  /** Default voice when `voice` is omitted from generate/speak calls. Defaults to {@link KittenVoice.Bella}. */
-  defaultVoice?: KittenVoice;
+  /** Default voice when `voice` is omitted from generate/speak calls. Defaults to `'bella'`. */
+  defaultVoice?: KittenTTSVoiceInput;
 
   /** Default speed multiplier (0.5--2.0). Defaults to 1.0 (natural speed). */
   speed?: number;
@@ -101,8 +104,8 @@ function defaultPhonemizer(config?: KittenTTSConfig): KittenPhonemizerProtocol {
 /** Resolve config with defaults applied. */
 export function resolveConfig(config?: KittenTTSConfig): ResolvedKittenTTSConfig {
   return {
-    model: config?.model ?? KittenModel.Nano,
-    defaultVoice: config?.defaultVoice ?? KittenVoice.Bella,
+    model: normalizeModel(config?.model ?? KittenModel.Nano),
+    defaultVoice: normalizeVoice(config?.defaultVoice ?? KittenVoice.Bella),
     speed: Math.min(Math.max(config?.speed ?? 1.0, 0.5), 2.0),
     storageDirectory: config?.storageDirectory ?? 'KittenTTS',
     modelBaseURL: config?.modelBaseURL ?? '',

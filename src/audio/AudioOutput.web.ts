@@ -20,6 +20,12 @@ export interface AudioPlayer {
   ): Promise<void>;
   /** Stop current playback. */
   stop(): Promise<void>;
+  /** Pause current playback when supported. */
+  pause?(): Promise<void>;
+  /** Resume current playback when supported. */
+  resume?(): Promise<void>;
+  /** Return current playback state when supported. */
+  isPlaying?(): boolean;
 }
 
 export class AudioOutput {
@@ -63,6 +69,29 @@ export class AudioOutput {
       }
     }
     this.playing = false;
+  }
+
+  async pause(): Promise<void> {
+    if (!this.player?.pause || !this.playing) return;
+    try {
+      await this.player.pause();
+    } catch (error) {
+      throw KittenTTSError.playbackFailed(errorMessage(error), error);
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (!this.player?.resume) return;
+    try {
+      await this.player.resume();
+      this.playing = true;
+    } catch (error) {
+      throw KittenTTSError.playbackFailed(errorMessage(error), error);
+    }
+  }
+
+  isPlaying(): boolean {
+    return this.player?.isPlaying?.() ?? this.playing;
   }
 }
 
@@ -120,6 +149,15 @@ export function createBrowserAudioPlayer(): AudioPlayer {
         audio.currentTime = 0;
       }
       cleanup();
+    },
+    async pause(): Promise<void> {
+      current?.pause();
+    },
+    async resume(): Promise<void> {
+      await current?.play();
+    },
+    isPlaying(): boolean {
+      return Boolean(current && !(current as any).paused && !(current as any).ended);
     },
   };
 }

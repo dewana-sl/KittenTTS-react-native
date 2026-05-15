@@ -23,6 +23,38 @@ export enum KittenVoice {
   Leo = 'expr-voice-5-m',
 }
 
+/** Preferred public voice IDs. */
+export type KittenTTSVoiceId =
+  | 'bella'
+  | 'jasper'
+  | 'luna'
+  | 'bruno'
+  | 'rosie'
+  | 'hugo'
+  | 'kiki'
+  | 'leo';
+
+/** Accepted voice value. String IDs are preferred; KittenVoice is kept for compatibility. */
+export type KittenTTSVoiceInput = KittenTTSVoiceId | KittenVoice;
+
+/** @deprecated Use KittenTTSVoiceId. */
+export type KittenVoiceId = KittenTTSVoiceId;
+
+/** @deprecated Use KittenTTSVoiceInput. */
+export type KittenVoiceInput = KittenTTSVoiceInput;
+
+/** Lightweight constants for autocomplete without enum-style names. */
+export const voice = {
+  bella: 'bella',
+  jasper: 'jasper',
+  luna: 'luna',
+  bruno: 'bruno',
+  rosie: 'rosie',
+  hugo: 'hugo',
+  kiki: 'kiki',
+  leo: 'leo',
+} as const satisfies Record<KittenTTSVoiceId, KittenTTSVoiceId>;
+
 /** All available voices. */
 export const ALL_VOICES: KittenVoice[] = [
   KittenVoice.Bella,
@@ -35,9 +67,48 @@ export const ALL_VOICES: KittenVoice[] = [
   KittenVoice.Leo,
 ];
 
-/** Human-readable display name for a voice. */
-export function voiceDisplayName(voice: KittenVoice): string {
+/** All preferred public voice IDs. */
+export const ALL_VOICE_IDS: KittenTTSVoiceId[] = [
+  'bella',
+  'jasper',
+  'luna',
+  'bruno',
+  'rosie',
+  'hugo',
+  'kiki',
+  'leo',
+];
+
+/** Convert a preferred public voice ID or legacy enum value into the internal embedding key. */
+export function normalizeVoice(voice: KittenTTSVoiceInput): KittenVoice {
   switch (voice) {
+    case 'bella':
+      return KittenVoice.Bella;
+    case 'jasper':
+      return KittenVoice.Jasper;
+    case 'luna':
+      return KittenVoice.Luna;
+    case 'bruno':
+      return KittenVoice.Bruno;
+    case 'rosie':
+      return KittenVoice.Rosie;
+    case 'hugo':
+      return KittenVoice.Hugo;
+    case 'kiki':
+      return KittenVoice.Kiki;
+    case 'leo':
+      return KittenVoice.Leo;
+    default:
+      if (Object.values(KittenVoice).includes(voice as KittenVoice)) {
+        return voice as KittenVoice;
+      }
+      throw new Error(`Unknown KittenTTS voice: ${voice}`);
+  }
+}
+
+/** Human-readable display name for a voice. */
+export function voiceDisplayName(voice: KittenTTSVoiceInput): string {
+  switch (normalizeVoice(voice)) {
     case KittenVoice.Bella:
       return 'Bella';
     case KittenVoice.Jasper:
@@ -58,6 +129,6 @@ export function voiceDisplayName(voice: KittenVoice): string {
 }
 
 /** Whether the voice is female. */
-export function isFemaleVoice(voice: KittenVoice): boolean {
-  return voice.endsWith('-f');
+export function isFemaleVoice(voice: KittenTTSVoiceInput): boolean {
+  return normalizeVoice(voice).endsWith('-f');
 }

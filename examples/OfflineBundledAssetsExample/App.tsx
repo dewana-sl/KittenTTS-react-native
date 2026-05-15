@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 import {
   KittenModel,
+  normalizeModel,
   KittenTTS,
-  KittenVoice,
   bundledAssetModels,
   createBundledAssetConfig,
   createExpoAudioPlayer,
@@ -35,7 +35,7 @@ export default function App() {
   const mountedRef = useRef(true);
   const player = useMemo(() => createExpoAudioPlayer(ExpoAudio), []);
   const models = useMemo(() => bundledAssetModels(manifest), []);
-  const [model, setModel] = useState<KittenModel>(models[0] ?? KittenModel.NanoInt8);
+  const [model, setModel] = useState<KittenModel>(models[0] ?? normalizeModel('nano-int8'));
   const [state, setState] = useState<WorkState>({ kind: 'preparing' });
 
   const prepare = useCallback(async (nextModel: KittenModel) => {
@@ -44,7 +44,7 @@ export default function App() {
       await ttsRef.current?.dispose();
       const config = await createBundledAssetConfig(manifest, {
         model: nextModel,
-        defaultVoice: KittenVoice.Bella,
+        defaultVoice: 'bella',
       });
       const tts = await KittenTTS.create({ ...config, player });
 

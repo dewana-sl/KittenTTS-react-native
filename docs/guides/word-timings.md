@@ -49,7 +49,7 @@ not a substitute for forced alignment.
 For best results:
 
 - Generate a sentence or short paragraph at a time.
-- Use `generateStreaming()` for long text.
+- Use `stream()` for long text.
 - Treat `wordIndex` as local to the generated chunk.
 
 The complete UI example is
@@ -62,7 +62,7 @@ one call. Stream sentence-sized chunks and update the UI for the chunk that is
 currently playing:
 
 ```tsx
-for await (const chunk of tts.generateStreaming(chapterText)) {
+for await (const chunk of tts.stream(chapterText)) {
   queue.push(chunk);
   // Start playback when the first chunk is ready.
 }

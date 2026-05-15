@@ -1,5 +1,5 @@
 export { KittenTTS } from './KittenTTS';
-export type { KittenTTSCreateOptions } from './KittenTTS';
+export type { KittenTTSCreateOptions, KittenTTSGenerateOptions, KittenTTSSpeakOptions } from './KittenTTS';
 export { KittenTTSResult } from './KittenTTSResult';
 export type { KittenWordTiming } from './KittenWordTiming';
 export {
@@ -8,8 +8,20 @@ export {
   errorMessage,
   isKittenTTSError,
 } from './KittenTTSError';
-export { KittenModel, modelDisplayName, approximateDownloadBytes } from './KittenModel';
-export { KittenVoice, ALL_VOICES, voiceDisplayName, isFemaleVoice } from './KittenVoice';
+export { KittenModel, model, normalizeModel, modelDisplayName, approximateDownloadBytes } from './KittenModel';
+export type {
+  KittenModelId,
+  KittenModelInput,
+  KittenTTSModelId,
+  KittenTTSModelInput,
+} from './KittenModel';
+export { KittenVoice, voice, ALL_VOICES, ALL_VOICE_IDS, normalizeVoice, voiceDisplayName, isFemaleVoice } from './KittenVoice';
+export type {
+  KittenTTSVoiceId,
+  KittenTTSVoiceInput,
+  KittenVoiceId,
+  KittenVoiceInput,
+} from './KittenVoice';
 export { OUTPUT_SAMPLE_RATE } from './KittenTTSConfig';
 export type { KittenTTSConfig, KittenTTSModelFiles } from './KittenTTSConfig';
 export { bundledAssetModels, createBundledAssetConfig } from './KittenTTSBundledAssets';
