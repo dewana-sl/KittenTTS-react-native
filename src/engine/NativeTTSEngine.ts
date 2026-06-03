@@ -156,7 +156,18 @@ export class NativeTTSEngine {
 
 function resolveNativeEngineModule(): NativeEngineModule {
   const rnModule = NativeModules.KittenTTSNativeEngine as NativeEngineModule | undefined;
-  if (rnModule) return rnModule;
+  if (rnModule) {
+    return {
+      createModel: rnModule.createModel.bind(rnModule),
+      destroyModel: rnModule.destroyModel.bind(rnModule),
+      loadVoiceStyle: rnModule.loadVoiceStyle.bind(rnModule),
+      synthesize: (modelId, tokenIds, style) => rnModule.synthesize(
+        modelId,
+        Array.from(tokenIds),
+        Array.from(style),
+      ),
+    };
+  }
 
   const nodeRequire = typeof process !== 'undefined' && process.versions?.node
     ? (Function('return require')() as NodeRequire)
