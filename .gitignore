@@ -2,6 +2,8 @@
 node_modules/
 
 # Native build outputs
+build/
+benchmark-audio/
 android/.gradle/
 android/build/
 android/app/build/

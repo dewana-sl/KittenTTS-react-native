@@ -11,7 +11,14 @@ export {
 export { KittenModel, modelDisplayName, approximateDownloadBytes } from './KittenModel';
 export { KittenVoice, ALL_VOICES, voiceDisplayName, isFemaleVoice } from './KittenVoice';
 export { OUTPUT_SAMPLE_RATE } from './KittenTTSConfig';
-export type { KittenTTSConfig, KittenTTSModelFiles } from './KittenTTSConfig';
+export type {
+  KittenTTSConfig,
+  KittenTTSInferenceEngine,
+  KittenTTSModelFiles,
+  KittenTTSNativeConfig,
+  KittenTTSNativeModelFiles,
+  KittenTTSNativeVariant,
+} from './KittenTTSConfig';
 export { bundledAssetModels, createBundledAssetConfig } from './KittenTTSBundledAssets';
 export type {
   CreateBundledAssetConfigOptions,

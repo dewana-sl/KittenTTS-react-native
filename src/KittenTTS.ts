@@ -14,6 +14,7 @@ import { KittenModel, speedPrior } from './KittenModel';
 import { KittenVoice } from './KittenVoice';
 import type { KittenWordTiming } from './KittenWordTiming';
 import { TTSEngine } from './engine/TTSEngine';
+import { NativeTTSEngine } from './engine/NativeTTSEngine';
 import { splitSentences } from './engine/SentenceSplitter';
 import { joinTimestamps } from './engine/TimestampJoiner';
 import { loadNPZ, loadNPZData } from './loader/NPZLoader';
@@ -87,13 +88,13 @@ export class KittenTTS {
   /** The configuration this instance was created with. */
   readonly config: ResolvedKittenTTSConfig;
 
-  private engine: TTSEngine;
+  private engine: TTSEngine | NativeTTSEngine;
   private audioOutput: AudioOutput;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
 
   private constructor(
-    engine: TTSEngine,
+    engine: TTSEngine | NativeTTSEngine,
     config: ResolvedKittenTTSConfig,
     player?: AudioPlayer,
   ) {
@@ -128,21 +129,26 @@ export class KittenTTS {
       )
       : Promise.resolve();
 
-    const modelDownload = resolveModelPaths(
-      resolved.model,
-      resolved.storageDirectory,
-      setupProgress,
-      {
-        modelFiles: resolved.modelFiles,
-        force: options?.forceRedownload ?? false,
-        retries: resolved.downloadRetries,
-        baseURL: resolved.modelBaseURL || undefined,
-      },
-    );
+    if (resolved.inferenceEngine === 'native') {
+      await phonemizerDownload;
+      setupProgress(1, { stage: 'complete' });
+      const nativeEngine = await NativeTTSEngine.create(resolved);
+      return new KittenTTS(nativeEngine, resolved, options?.player);
+    }
 
     const [, downloadedPaths] = await Promise.all([
       phonemizerDownload,
-      modelDownload,
+      resolveModelPaths(
+        resolved.model,
+        resolved.storageDirectory,
+        setupProgress,
+        {
+          modelFiles: resolved.modelFiles,
+          force: options?.forceRedownload ?? false,
+          retries: resolved.downloadRetries,
+          baseURL: resolved.modelBaseURL || undefined,
+        },
+      ),
     ]);
     setupProgress(1, { stage: 'complete' });
 
@@ -203,7 +209,9 @@ export class KittenTTS {
       selectedVoice,
       selectedSpeed,
     );
-    const effectiveSpeed = selectedSpeed * speedPrior(this.config.model, selectedVoice);
+    const effectiveSpeed = selectedSpeed * (
+      this.config.applySpeedPriors ? speedPrior(this.config.model, selectedVoice) : 1.0
+    );
     const wordTimings = normalizeWordTimingsToDuration(
       joinTimestamps(trimmed, output.phonemes, output.durations),
       output.samples.length / OUTPUT_SAMPLE_RATE,

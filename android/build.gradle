@@ -132,6 +132,34 @@ android {
     }
   }
 
+  if (autolinkedOnnxRuntimeProject != null) {
+    defaultConfig {
+      externalNativeBuild {
+        cmake {
+          cppFlags "-O3 -frtti -fexceptions -Wall -Wno-unused-variable"
+          arguments(
+            "-DANDROID_STL=c++_shared",
+            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
+            "-DCMAKE_MODULE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
+            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+          )
+          abiFilters(*reactNativeArchitectures())
+        }
+      }
+    }
+
+    externalNativeBuild {
+      cmake {
+        path "src/main/cpp/CMakeLists.txt"
+      }
+    }
+
+    packagingOptions {
+      pickFirst "**/libc++_shared.so"
+      doNotStrip resolveBuildType() == "debug" ? "**/**/*.so" : ""
+    }
+  }
+
   sourceSets {
     main {
       manifest.srcFile "src/main/AndroidManifest.xml"

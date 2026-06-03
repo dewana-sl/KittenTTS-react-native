@@ -122,19 +122,21 @@ export class TTSEngine {
     }
 
     try {
-      const tokens = TextCleaner.encode(phonemes);
+      const tokens = TextCleaner.encodeTokenized(phonemes);
       const chunks = this.splitIntoChunks(tokens);
-      const effectiveSpeed = speed * speedPrior(this.config.model, voice);
+      const speedMultiplier = this.config.applySpeedPriors
+        ? speedPrior(this.config.model, voice)
+        : 1.0;
+      const effectiveSpeed = speed * speedMultiplier;
       const singleChunk = chunks.length === 1;
 
       const allChunks: Float32Array[] = [];
       let durations: number[] = [];
       for (const chunk of chunks) {
-        const chunkTextLength = Math.max(0, chunk.length - 3);
         const output = await this.runChunk(
           chunk,
           embedding,
-          chunkTextLength,
+          normalised.length,
           effectiveSpeed,
         );
         allChunks.push(output.samples);
@@ -163,11 +165,11 @@ export class TTSEngine {
   private async runChunk(
     tokens: number[],
     embedding: { rows: number; cols: number; data: Float32Array },
-    phonemeLength: number,
+    textLength: number,
     speed: number,
   ): Promise<{ samples: Float32Array; durations: number[] }> {
     // Get style vector for this text length
-    const rowIdx = Math.min(phonemeLength, embedding.rows - 1);
+    const rowIdx = Math.min(textLength, embedding.rows - 1);
     const styleVec = embedding.data.slice(
       rowIdx * embedding.cols,
       (rowIdx + 1) * embedding.cols,

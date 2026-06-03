@@ -63,3 +63,49 @@ export function encode(phonemes: string): number[] {
   tokens.push(PAD_TOKEN_ID);
   return tokens;
 }
+
+/**
+ * Encode IPA after applying the same basic tokenizer used by the Python SDK.
+ */
+export function encodeTokenized(phonemes: string): number[] {
+  return encode(basicEnglishTokenize(phonemes).join(' '));
+}
+
+/**
+ * Encode IPA for the native C++ engine as `[start, ...tokens, pad]` Float32 IDs.
+ */
+export function encodeNative(phonemes: string): Float32Array {
+  const tokens: number[] = [START_TOKEN_ID];
+  for (const char of basicEnglishTokenize(phonemes).join(' ')) {
+    const cp = char.codePointAt(0)!;
+    const id = SYMBOL_INDEX.get(cp);
+    if (id !== undefined) {
+      tokens.push(id);
+    }
+  }
+  tokens.push(PAD_TOKEN_ID);
+  return Float32Array.from(tokens);
+}
+
+function basicEnglishTokenize(text: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+
+  for (const char of text) {
+    if (/^[\p{L}\p{N}_]$/u.test(char)) {
+      current += char;
+      continue;
+    }
+
+    if (current) {
+      tokens.push(current);
+      current = '';
+    }
+    if (!/\s/u.test(char)) {
+      tokens.push(char);
+    }
+  }
+
+  if (current) tokens.push(current);
+  return tokens;
+}

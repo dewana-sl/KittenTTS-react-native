@@ -7,6 +7,32 @@ import type { ModelPaths } from './loader/ModelDownloader';
 
 export type KittenTTSModelFiles = ModelPaths;
 
+export type KittenTTSInferenceEngine = 'onnx' | 'native';
+
+export type KittenTTSNativeVariant =
+  | 'fp32_15m'
+  | 'fp32_40m'
+  | 'fp32_80m'
+  | 'int8_15m'
+  | 'int8_40m'
+  | 'int8_80m';
+
+export interface KittenTTSNativeModelFiles {
+  /** Native engine architecture JSON path. */
+  archPath: string;
+  /** Native engine weight binary path. */
+  weightsPath: string;
+  /** Directory containing one `<voice-id>.bin` file per voice. */
+  voiceDirectoryPath: string;
+}
+
+export interface KittenTTSNativeConfig {
+  /** Native C++ model variant. Defaults to the variant mapped from `model`. */
+  variant?: KittenTTSNativeVariant;
+  /** Local native files. Required by the native backend in this initial implementation. */
+  modelFiles?: KittenTTSNativeModelFiles;
+}
+
 export type ResolvedKittenTTSConfig =
   Required<Omit<KittenTTSConfig, 'modelFiles'>> &
   Pick<KittenTTSConfig, 'modelFiles'>;
@@ -34,6 +60,9 @@ export interface KittenTTSConfig {
   /** Default speed multiplier (0.5--2.0). Defaults to 1.0 (natural speed). */
   speed?: number;
 
+  /** Whether generation applies the model's per-voice speed priors. Defaults to true. */
+  applySpeedPriors?: boolean;
+
   /**
    * Root directory where downloaded SDK assets are cached.
    * Model files live under `<storageDirectory>/<model>/`.
@@ -51,6 +80,12 @@ export interface KittenTTSConfig {
    * files directly and skips model downloads/cache lookup.
    */
   modelFiles?: KittenTTSModelFiles;
+
+  /** Inference backend. Defaults to `onnx` for backwards compatibility. */
+  inferenceEngine?: KittenTTSInferenceEngine;
+
+  /** Native backend options. Used only when `inferenceEngine` is `native`. */
+  nativeConfig?: KittenTTSNativeConfig;
 
   /** Total download attempts per model file before failing. Defaults to 4. */
   downloadRetries?: number;
@@ -87,9 +122,12 @@ export function resolveConfig(config?: KittenTTSConfig): ResolvedKittenTTSConfig
     model: config?.model ?? KittenModel.Nano,
     defaultVoice: config?.defaultVoice ?? KittenVoice.Bella,
     speed: Math.min(Math.max(config?.speed ?? 1.0, 0.5), 2.0),
+    applySpeedPriors: config?.applySpeedPriors ?? true,
     storageDirectory: config?.storageDirectory ?? `${RNFS.DocumentDirectoryPath}/KittenTTS`,
     modelBaseURL: config?.modelBaseURL ?? '',
     modelFiles: config?.modelFiles,
+    inferenceEngine: config?.inferenceEngine ?? 'onnx',
+    nativeConfig: config?.nativeConfig ?? {},
     downloadRetries: Math.max(1, Math.floor(config?.downloadRetries ?? 4)),
     ortNumThreads: Math.max(1, config?.ortNumThreads ?? 4),
     maxTokensPerChunk: Math.max(50, config?.maxTokensPerChunk ?? 400),
