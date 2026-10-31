@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added Kitten TTS 2 through the Kitten API:
+  `KittenTTS.create({ model: 'kitten-tts-2', apiKey })` returns a `KittenTTS2`
+  with the same `generate()`, `generateStreaming()`, `speak()` and `play()`,
+  plus voice cloning from a `reference` recording, presets, decoding controls and
+  `availableVoices`, like the Python package. Failed requests throw
+  `KittenAPIError`. Existing on-device code is unchanged.
 - Fixed native bundling: the `browser` map added with web support also applied
   on iOS and Android, so Metro bundled the web files and failed with
   "Unable to resolve module node:fs/promises".

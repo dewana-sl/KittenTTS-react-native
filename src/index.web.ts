@@ -1,11 +1,23 @@
 export { KittenTTS } from './KittenTTS.web';
 export type { KittenTTSCreateOptions } from './KittenTTS.web';
 export { KittenTTSResult } from './KittenTTSResult';
+export { KittenTTS2 } from './KittenTTS2.web';
+export type { KittenTTS2CreateOptions } from './KittenTTS2.web';
+export type {
+  KittenReferenceAudio,
+  KittenTTS2GenerateOptions,
+  KittenTTS2Model,
+  KittenTTS2Preset,
+  KittenTTS2Voice,
+} from './api/KittenTTS2Base';
+export type { FetchLike } from './api/KittenAPI';
 export type { KittenWordTiming } from './KittenWordTiming';
 export {
+  KittenAPIError,
   KittenTTSError,
   KittenTTSErrorCode,
   errorMessage,
+  isKittenAPIError,
   isKittenTTSError,
 } from './KittenTTSError';
 export { KittenModel, modelDisplayName, approximateDownloadBytes } from './KittenModel';
