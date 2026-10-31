@@ -106,6 +106,52 @@ await tts.play(result, {
 | `wavData()` | Complete 16-bit PCM WAV as `Uint8Array` |
 | `wavBase64()` | Complete WAV as a base64 string |
 
+## Kitten TTS 2: `KittenTTS2`
+
+`KittenTTS.create({ model: 'kitten-tts-2', ... })` returns a `KittenTTS2`:
+Kitten TTS 2 running on the hosted Kitten API, with the same calls as above.
+See the [Kitten API guide](../guides/kitten-api.md).
+
+```tsx
+const tts = await KittenTTS.create({
+  model: 'kitten-tts-2',
+  apiKey: KITTENML_API_KEY,
+  player: createExpoAudioPlayer(ExpoAudio),
+});
+
+await tts.generate('Hello.', 'bella_en');
+await tts.generate('Hello.', { reference: recordingUri, preset: 'stable' });
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `model` | required | `'kitten-tts-2'`, or a Kitten TTS 2 model ID such as `'kitten-tts-2-latest'` |
+| `apiKey` | none | Kitten API key; for development, see the guide |
+| `baseUrl` | `https://api.kittenml.com/v1` | API root, or your own backend that adds the key |
+| `headers` | none | Extra headers sent with every request |
+| `defaultVoice` | the API's default | Voice used when a call names none |
+| `speed` | `1.0` | Speed from `0.25` to `4.0` |
+| `timeoutMs` | `300000` | Per-request timeout; streams are timed until they start |
+| `maxRetries` | `2` | Retries for `429` and `5xx` responses |
+| `fetch` | global `fetch` | Replacement `fetch`, e.g. from `expo/fetch` to stream on iOS and Android |
+| `player` | none | Required for `speak()` and `play()` |
+
+| Member | Description |
+| --- | --- |
+| `generate(text, voice?, speed?)` | Complete speech as a `KittenTTSResult<string>` |
+| `generate(text, options)` | With `voice` or `reference`, `referenceText`, `preset`, `temperature`, `topK`, `topP`, `minP`, `maxNewTokens`, `normalize`, `speed`, `signal` |
+| `generateStreaming(text, voice?, speed?)` or `(text, options)` | Yields chunks while generating, cut at pauses |
+| `speak(...)`, `play(result)`, `stopSpeaking()` | As on the device |
+| `availableVoices` | Voice IDs accepted by `voice` |
+| `voices` | `{ id, name, language, type, experimental }` for each voice |
+| `model` | Model ID sent to the API |
+| `sampleRate` | `24000` |
+| `dispose()` | Cancels requests in flight and stops playback |
+
+`KittenTTSResult<string>` has the same members as an on-device result; its
+`voice` is the voice ID sent, or `''` when the API chose the voice or it was
+cloned from `reference`, and `wordTimings` is empty.
+
 ## Cache Methods
 
 | Method | Description |
@@ -165,3 +211,11 @@ try {
 | `PHONEMIZER_FAILED` | Text-to-phoneme conversion failed |
 | `INFERENCE_FAILED` | ONNX Runtime setup or inference failed |
 | `PLAYBACK_FAILED` | Audio playback failed |
+| `INVALID_ARGUMENT` | An argument was invalid, e.g. both `voice` and `reference` |
+| `API_ERROR` | The Kitten API answered with an error (`KittenAPIError`) |
+| `NETWORK_ERROR` | The Kitten API could not be reached, or timed out (`KittenAPIError`) |
+| `CANCELLED` | A Kitten API request was cancelled by its `signal` or `dispose()` |
+
+`KittenAPIError` also carries `status`, `apiCode` (the API's own code, such as
+`invalid_voice`), `param`, `requestId` and `retryAfter`. Check for it with
+`isKittenAPIError(error)`.

@@ -7,6 +7,7 @@
   "browser": {
     "./lib/index.js": "./lib/index.web.js",
     "./lib/KittenTTS.js": "./lib/KittenTTS.web.js",
+    "./lib/KittenTTS2.js": "./lib/KittenTTS2.web.js",
     "./lib/KittenTTSBundledAssets.js": "./lib/KittenTTSBundledAssets.web.js",
     "./lib/KittenTTSConfig.js": "./lib/KittenTTSConfig.web.js",
     "./lib/audio/AudioOutput.js": "./lib/audio/AudioOutput.web.js",
@@ -14,6 +15,18 @@
     "./lib/loader/ModelDownloader.js": "./lib/loader/ModelDownloader.web.js",
     "./lib/loader/NPZLoader.js": "./lib/loader/NPZLoader.web.js",
     "./lib/phonemizer/CEPhonemizer.js": "./lib/phonemizer/CEPhonemizer.web.js"
+  },
+  "react-native": {
+    "./lib/index.js": "./lib/index.js",
+    "./lib/KittenTTS.js": "./lib/KittenTTS.js",
+    "./lib/KittenTTS2.js": "./lib/KittenTTS2.js",
+    "./lib/KittenTTSBundledAssets.js": "./lib/KittenTTSBundledAssets.js",
+    "./lib/KittenTTSConfig.js": "./lib/KittenTTSConfig.js",
+    "./lib/audio/AudioOutput.js": "./lib/audio/AudioOutput.js",
+    "./lib/engine/TTSEngine.js": "./lib/engine/TTSEngine.js",
+    "./lib/loader/ModelDownloader.js": "./lib/loader/ModelDownloader.js",
+    "./lib/loader/NPZLoader.js": "./lib/loader/NPZLoader.js",
+    "./lib/phonemizer/CEPhonemizer.js": "./lib/phonemizer/CEPhonemizer.js"
   },
   "exports": {
     ".": {
@@ -56,6 +69,7 @@
     "prepublishOnly": "npm test",
     "publish:npm": "npm publish --access public",
     "test": "npm run build:test && node --test tests/*.test.js",
+    "test:live": "npm run build:test && node --test tests/live/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "npm run typecheck"
   },
