@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Fixed iOS builds on React Native 0.88 (Expo SDK 58), which failed with
+  "unknown type name 'RCTCxxBridge'": the ONNX Runtime postinstall patch now
+  reaches the JavaScript runtime without that class, which React Native 0.88
+  removed.
+- Fixed `pod install` on React Native 0.83 and older, which failed with
+  "Unrecognized generic type 'ArrayBuffer'": `react-native-fs` is kept below
+  2.41.0, which needs React Native 0.88.
+- Fixed native bundling: the `browser` map added with web support also applied
+  on iOS and Android, so Metro bundled the web files and failed with
+  "Unable to resolve module node:fs/promises".
 - Added Swift-parity word timing metadata via `KittenTTSResult.wordTimings`.
 - Added `KittenTTS.generateStreaming()` for sentence-by-sentence generation.
 - Added `tts.play(result)` so apps can inspect timings before playback.

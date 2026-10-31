@@ -22,6 +22,10 @@ Main flow:
 - `src/KittenTTS.ts`: main SDK class and lifecycle.
 - `src/KittenTTSConfig.ts`: user config and defaults.
 - `src/*.web.ts`: React Native Web entrypoints and platform-specific browser implementations.
+  Each one needs an entry in `package.json` under `browser` (native file to web
+  file) **and** under `react-native` (native file to itself). Metro reads
+  `browser` on iOS and Android too, so without the second entry the web file is
+  bundled into native apps and bundling fails. A test enforces the pairing.
 - `src/KittenTTSError.ts`: SDK error codes and helpers.
 - `src/KittenModel.ts`: model names, download URLs, sizes, speed priors.
 - `src/KittenVoice.ts`: voice enum and display helpers.
@@ -58,6 +62,11 @@ prefer editing `src/` and rebuilding.
 
 - Runtime dependencies are `onnxruntime-react-native`,
   `@dr.pogodin/react-native-fs` via the `react-native-fs` alias, and `pako`.
+- `react-native-fs` stays below 2.41.0: 2.41 needs React Native 0.88 (its codegen
+  spec uses `ArrayBuffer`), so newer versions break `pod install` on older apps.
+- `onnxruntime-react-native` 1.24 casts to `RCTCxxBridge`, which React Native
+  0.88 removed; the postinstall patch replaces that cast. Check both Expo SDK 55
+  and the newest SDK build after changing either dependency.
 - Playback is optional. Users must pass either `createExpoAudioPlayer()` with
   `expo-audio`, `createRNSoundPlayer()` with `react-native-sound`, or their own
   `AudioPlayer`.
