@@ -1,380 +1,447 @@
-// Port of the English parts of the Python `num2words` 0.5.14 package (num2words/base.py,
-// lang_EU.py, lang_EN.py) that Kitten TTS 2 Nano/Pico/Mini's text front end uses:
-// tts_norm calls num2words(int), to='ordinal' and to='year'; misaki's en.py also calls
-// num2words(float(word)). Output matches Python string for string, including its quirks:
+// English number words (cardinal, ordinal, year): an independent implementation that
+// matches the outputs of Python num2words 0.5.14 (lang "en"), worked out by calling it and
+// comparing results, not by porting its code. Apache-2.0, like the rest of the SDK.
 //
-//   - Python ints are `bigint` here (callers pass digit strings far beyond 2^53).
-//   - Python floats are `number`. An integral float takes the integer path, but Python
-//     then splits it with float divmod, so a big float like 1e305 is NOT spelled like
-//     int(1e305); that float arithmetic is reproduced.
-//   - A non-integral float is spelled "<int part> point <digit> <digit> ...", with the
-//     number of digits taken from repr(float), and the sign of -0.5 lost ("zero point
-//     five"), as in Python.
-//   - Errors carry the Python exception name (OverflowError, TypeError, ValueError).
+// Measured behaviour this reproduces:
+// - British joins: "one hundred and five", "one thousand, two hundred", "one million and one".
+// - Short-scale names up to centillion (10^303); abs >= 10^306 is an OverflowError.
+// - bigint (Python int) is exact. A whole `number` (Python float) is split by float divmod
+//   with float(10**k), so 1e24 (just under 10**24) reads "nine hundred and ninety-nine
+//   sextillion, ...". A float with a fraction reads "<int(x)> point <digits>": as many
+//   digits as repr(x) has, from abs(x - int(x)) * 10**digits, rounded within 0.01 of a
+//   whole number and floored otherwise. int(x) carries the sign, so -0.5 has no "minus".
+// - A string is read like Python's Decimal(string): whole values exact, except that abs()
+//   and group remainders round to 28 significant digits; fractions go through float(x).
 
-import { floatToInt, PyError } from '../pystr';
+import { PyError, decimalValue, floatToInt, pyStripSpace } from '../pystr';
 
 export type Num2WordsTo = 'cardinal' | 'ordinal' | 'year';
 
-interface Pair {
-  text: string;
-  num: bigint;
-}
-type Item = Pair | Item[];
+const ONES = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
+  'nineteen',
+];
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
 
-// ---- the number words (Num2Word_EU.setup + Num2Word_EN.setup) ----
+/** Scale names by power of ten (3, 6, ..., 303). */
+const SCALES: Record<number, string> = (() => {
+  const first = ['m', 'b', 'tr', 'quadr', 'quint', 'sext', 'sept', 'oct', 'non'];
+  const unit = ['', 'un', 'duo', 'tre', 'quattuor', 'quin', 'sex', 'sept', 'octo', 'novem'];
+  const ten = ['', 'dec', 'vigint', 'trigint', 'quadragint', 'quinquagint', 'sexagint',
+    'septuagint', 'octogint', 'nonagint'];
+  const out: Record<number, string> = { 3: 'thousand', 303: 'centillion' };
+  for (let i = 1; i < 100; i++) {
+    out[3 * i + 3] = (i < 10 ? first[i - 1] : unit[i % 10] + ten[Math.floor(i / 10)]) + 'illion';
+  }
+  return out;
+})();
+const TOP_SCALE = 303;
+const LIMIT_EXP = 306;
 
-const HIGH_LOWS = ['non', 'oct', 'sept', 'sext', 'quint', 'quadr', 'tr', 'b', 'm'];
-const HIGH_UNITS = ['', 'un', 'duo', 'tre', 'quattuor', 'quin', 'sex', 'sept', 'octo', 'novem'];
-const HIGH_TENS = [
-  'dec', 'vigint', 'trigint', 'quadragint', 'quinquagint',
-  'sexagint', 'septuagint', 'octogint', 'nonagint',
-];
-const MID_NUMWORDS: Array<[number, string]> = [
-  [1000, 'thousand'], [100, 'hundred'], [90, 'ninety'], [80, 'eighty'], [70, 'seventy'],
-  [60, 'sixty'], [50, 'fifty'], [40, 'forty'], [30, 'thirty'],
-];
-const LOW_NUMWORDS = [
-  'twenty', 'nineteen', 'eighteen', 'seventeen', 'sixteen', 'fifteen', 'fourteen',
-  'thirteen', 'twelve', 'eleven', 'ten', 'nine', 'eight', 'seven', 'six', 'five',
-  'four', 'three', 'two', 'one', 'zero',
-];
-const ORDS: Record<string, string> = {
-  one: 'first', two: 'second', three: 'third', four: 'fourth', five: 'fifth',
-  six: 'sixth', seven: 'seventh', eight: 'eighth', nine: 'ninth', ten: 'tenth',
-  eleven: 'eleventh', twelve: 'twelfth',
+const POW10: bigint[] = [1n];
+for (let i = 1; i <= LIMIT_EXP + 3; i++) POW10.push(POW10[i - 1] * 10n);
+const LIMIT = POW10[LIMIT_EXP];
+
+/** Decimal's default context precision. */
+const DEC_PREC = 28;
+
+const ORDINAL_WORDS: Record<string, string> = {
+  one: 'first', two: 'second', three: 'third', five: 'fifth', eight: 'eighth', nine: 'ninth',
+  twelve: 'twelfth',
 };
 
-function pow10(n: number): bigint {
-  let p = BigInt(1);
-  const ten = BigInt(10);
-  for (let i = 0; i < n; i++) p *= ten;
-  return p;
+// ---------------------------------------------------------------------------
+// Words for whole numbers
+
+function under1000(n: number): string {
+  if (n < 20) return ONES[n];
+  if (n < 100) {
+    const t = TENS[Math.floor(n / 10)];
+    return n % 10 ? `${t}-${ONES[n % 10]}` : t;
+  }
+  const rest = n % 100;
+  const head = `${ONES[Math.floor(n / 100)]} hundred`;
+  return rest ? `${head} and ${under1000(rest)}` : head;
 }
 
-/** self.cards, in OrderedDict order: 10^303 ... 10^6, 1000, 100, 90 ... 30, 20 ... 0. */
-const CARD_NUMS: bigint[] = [];
-/** float(key), what Python's divmod(float, int) converts each key to (correctly rounded). */
-const CARD_FLOATS: number[] = [];
-const CARD_WORDS: string[] = [];
+function joinScale(head: string, k: number, rest: string | null, restBelow100: boolean): string {
+  const s = `${head} ${SCALES[k]}`;
+  if (rest === null) return s;
+  return s + (restBelow100 ? ' and ' : ', ') + rest;
+}
 
-(function buildCards() {
-  // gen_high_numwords: [u + t for t in tens for u in units], reversed, then the lows
-  const gen: string[] = [];
-  for (const t of HIGH_TENS) for (const u of HIGH_UNITS) gen.push(u + t);
-  gen.reverse();
-  const high = ['cent', ...gen, ...HIGH_LOWS];
-  // Num2Word_EN.set_high_numwords: zip(high, range(3 + 3 * len(high), 3, -3))
-  for (let i = 0, n = 3 + 3 * high.length; i < high.length && n > 3; i++, n -= 3) {
-    CARD_NUMS.push(pow10(n));
-    CARD_FLOATS.push(Number('1e' + n));
-    CARD_WORDS.push(high[i] + 'illion');
-  }
-  for (const [n, word] of MID_NUMWORDS) {
-    CARD_NUMS.push(BigInt(n));
-    CARD_FLOATS.push(n);
-    CARD_WORDS.push(word);
-  }
-  for (let i = 0; i < LOW_NUMWORDS.length; i++) {
-    const n = LOW_NUMWORDS.length - 1 - i;
-    CARD_NUMS.push(BigInt(n));
-    CARD_FLOATS.push(n);
-    CARD_WORDS.push(LOW_NUMWORDS[i]);
-  }
-})();
+/** The largest scale power k (3..303, step 3) with 10**k <= n, for n >= 1000. */
+function scaleOf(n: bigint): number {
+  let k = 3;
+  while (k < TOP_SCALE && POW10[k + 3] <= n) k += 3;
+  return k;
+}
 
-const MAXVAL: bigint = BigInt(1000) * CARD_NUMS[0];
-const ZERO = BigInt(0);
-const ONE = BigInt(1);
-const TEN = BigInt(10);
-const HUNDRED = BigInt(100);
-const TWO_53 = 9007199254740992;
+/** Python int, exact; with `decimal`, each remainder is rounded as Decimal arithmetic does. */
+function wordsInt(n: bigint, decimal: boolean): string {
+  if (n < 1000n) return under1000(Number(n));
+  const k = scaleOf(n);
+  const q = n / POW10[k];
+  let r = n - q * POW10[k];
+  if (decimal) r = roundSig(r);
+  return joinScale(wordsInt(q, decimal), k, r ? wordsInt(r, decimal) : null, r < 100n);
+}
 
-// ---- Python float helpers ----
+/** A whole, finite, non-negative Python float, split with float divmod. */
+function wordsFloat(n: number): string {
+  if (n < 1000) return under1000(n);
+  const k = scaleOf(BigInt(n));
+  const [q, r] = floatDivmod(n, Number(POW10[k]));
+  return joinScale(wordsFloat(q), k, r ? wordsFloat(r) : null, r < 100);
+}
 
-/** Python's divmod(float, float) (Objects/floatobject.c _float_div_mod). */
-function floatDivmod(vx: number, wx: number): [number, number] {
-  // C truth tests: NaN counts as true, so compare with 0 instead of `if (mod)`
-  let mod = vx % wx; // fmod: exact
-  let div = (vx - mod) / wx;
+function ordinalize(words: string): string {
+  const cut = Math.max(words.lastIndexOf(' '), words.lastIndexOf('-')) + 1;
+  const last = words.slice(cut);
+  const ord = ORDINAL_WORDS[last] ?? (last.endsWith('y') ? `${last.slice(0, -1)}ieth` : `${last}th`);
+  return words.slice(0, cut) + ord;
+}
+
+// ---------------------------------------------------------------------------
+// Python float helpers
+
+/** divmod(a, b) for Python floats, as CPython computes it. */
+function floatDivmod(a: number, b: number): [number, number] {
+  let mod = a % b;
+  let div = (a - mod) / b;
   if (mod !== 0) {
-    if ((wx < 0) !== (mod < 0)) {
-      mod += wx;
-      div -= 1.0;
+    if ((b < 0) !== (mod < 0)) {
+      mod += b;
+      div -= 1;
     }
   } else {
-    mod = wx < 0 ? -0 : 0;
+    mod = b < 0 ? -0 : 0;
   }
-  let floordiv: number;
+  let floorDiv: number;
   if (div !== 0) {
-    floordiv = Math.floor(div);
-    if (div - floordiv > 0.5) floordiv += 1.0;
+    floorDiv = Math.floor(div);
+    if (div - floorDiv > 0.5) floorDiv += 1;
   } else {
-    floordiv = vx / wx < 0 || Object.is(vx / wx, -0) ? -0 : 0;
+    const t = a / b;
+    floorDiv = t < 0 || Object.is(t, -0) ? -0 : 0;
   }
-  return [floordiv, mod];
+  return [floorDiv, mod];
 }
 
-/** Python's round(x) for a float: half to even. */
-function roundHalfEven(x: number): number {
-  const f = Math.floor(x);
-  const d = x - f;
-  if (d > 0.5) return f + 1;
-  if (d < 0.5) return f;
-  return f % 2 === 0 ? f : f + 1;
+/** a % b for Python floats. */
+function floatMod(a: number, b: number): number {
+  return floatDivmod(a, b)[1];
 }
 
-/** abs(Decimal(str(x)).as_tuple().exponent): the decimal places of repr(x). */
-function reprDecimalPlaces(x: number): number {
-  // String(x) has the same shortest round-trip digits as Python's repr; only the
-  // switch to exponent form differs, and the parse below does not care.
-  const m = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/.exec(String(Math.abs(x)));
-  if (!m) throw new PyError('ValueError', `cannot read float ${x}`);
-  const frac = m[2] ? m[2].length : 0;
-  const exp = m[3] ? parseInt(m[3], 10) : 0;
-  return Math.abs(exp - frac);
+/** Significant digits and decimal exponent of the shortest repr of a finite x != 0. */
+function shortestDigits(x: number): { digits: string; exp: number } {
+  const s = String(Math.abs(x));
+  const e = s.indexOf('e');
+  if (e >= 0) {
+    return { digits: s.slice(0, e).replace('.', ''), exp: Number(s.slice(e + 1)) };
+  }
+  const dot = s.indexOf('.');
+  const intLen = dot < 0 ? s.length : dot;
+  const all = dot < 0 ? s : s.slice(0, dot) + s.slice(dot + 1);
+  let lead = 0;
+  while (all[lead] === '0') lead++;
+  return { digits: all.slice(lead).replace(/0+$/, ''), exp: intLen - 1 - lead };
 }
 
-// ---- Num2Word_Base ----
+/** abs() of the exponent of Decimal(repr(x)): how many digits follow "point". */
+function reprPlaces(x: number): number {
+  if (x === 0) return 1; // '0.0'
+  const { digits, exp } = shortestDigits(x);
+  const nd = digits.length;
+  // repr is positional for exponents -4..15 and always shows at least one fraction digit.
+  if (exp >= -4 && exp < 16) return Math.max(nd - 1 - exp, 1);
+  return Math.abs(exp - (nd - 1));
+}
 
-function splitnum(value: bigint): Item[] {
-  for (let i = 0; i < CARD_NUMS.length; i++) {
-    const elem = CARD_NUMS[i];
-    if (elem > value) continue;
-    const out: Item[] = [];
-    let div: bigint;
-    let mod: bigint;
-    if (value === ZERO) {
-      div = ONE;
-      mod = ZERO;
-    } else {
-      div = value / elem;
-      mod = value % elem;
+/** A float that may have a fraction: "<int part> point <digits>". */
+function pointWords(x: number): string {
+  const places = reprPlaces(x);
+  if (places > 308) throw new PyError('OverflowError', 'int too large to convert to float');
+  const whole = Math.trunc(x);
+  const head = whole < 0 ? `minus ${wordsInt(BigInt(-whole), false)}` : wordsInt(BigInt(whole), false);
+  if (places === 0) return head;
+  const scaled = Math.abs(x - whole) * Number(`1e${places}`);
+  const near = Math.round(scaled);
+  const frac = Math.abs(near - scaled) < 0.01 ? near : Math.floor(scaled);
+  const digits = BigInt(frac).toString().padStart(places, '0');
+  return `${head} point ${Array.from(digits, d => ONES[Number(d)]).join(' ')}`;
+}
+
+function floatOverLimit(x: number): boolean {
+  if (Number.isNaN(x)) return false;
+  if (!Number.isFinite(x)) return true;
+  return Math.abs(x) >= 1e305 && BigInt(Math.abs(x)) >= LIMIT;
+}
+
+function overflow(): PyError {
+  return new PyError('OverflowError', 'abs(number) must be less than 10**306');
+}
+
+// ---------------------------------------------------------------------------
+// Python decimal.Decimal, as much of it as num2words reaches for a string
+
+/** coef * 10**exp, with a sign; or one of the special values. */
+class Dec {
+  constructor(
+    readonly neg: boolean,
+    readonly coef: bigint,
+    readonly exp: number,
+    readonly special: '' | 'inf' | 'nan' | 'snan' = '',
+  ) {}
+
+  private get coefDigits(): number {
+    return this.coef.toString().length;
+  }
+
+  isZero(): boolean {
+    return this.coef === 0n;
+  }
+
+  /** d < 0 (minus zero is not). */
+  isNegative(): boolean {
+    return this.neg && !this.isZero();
+  }
+
+  /** k such that 10**(k-1) <= abs(d) < 10**k, or 0 for zero. */
+  magnitude(): number {
+    return this.isZero() ? 0 : this.coefDigits + this.exp;
+  }
+
+  isWhole(): boolean {
+    if (this.exp >= 0 || this.isZero()) return true;
+    return -this.exp <= this.coefDigits && this.coef % pow10(-this.exp) === 0n;
+  }
+
+  /** abs(int(d)); only called once the magnitude is known to be small. */
+  intPart(): bigint {
+    if (this.exp >= 0) return this.coef * pow10(this.exp);
+    return -this.exp > this.coefDigits ? 0n : this.coef / pow10(-this.exp);
+  }
+
+  /** float(d), correctly rounded like Python's. */
+  toFloat(): number {
+    return Number(`${this.neg ? '-' : ''}${this.coef}e${this.exp}`);
+  }
+
+  /** abs(d): Decimal rounds the result to the context precision. */
+  abs(): Dec {
+    const [coef, exp] = roundCoef(this.coef, this.exp);
+    return new Dec(false, coef, exp);
+  }
+
+  /** Whether abs() keeps every digit. */
+  absIsExact(): boolean {
+    const [coef, exp] = roundCoef(this.coef, this.exp);
+    return exp === this.exp || coef * pow10(exp - this.exp) === this.coef;
+  }
+
+  /** Compare a finite d with a small non-negative integer n: -1, 0 or 1. */
+  cmp(n: number): number {
+    if (this.isZero()) return n === 0 ? 0 : -1;
+    if (this.neg) return -1;
+    if (n === 0) return 1;
+    const mag = this.magnitude();
+    const nMag = String(n).length;
+    if (mag !== nMag) return mag < nMag ? -1 : 1;
+    // Same number of integer digits, so the exponent is small enough to scale.
+    const a = this.exp >= 0 ? this.coef * pow10(this.exp) : this.coef;
+    const b = this.exp >= 0 ? BigInt(n) : BigInt(n) * pow10(-this.exp);
+    return a === b ? 0 : a < b ? -1 : 1;
+  }
+}
+
+function pow10(k: number): bigint {
+  return k < POW10.length ? POW10[k] : 10n ** BigInt(k);
+}
+
+/** Round a coefficient to DEC_PREC significant digits, half to even. */
+function roundCoef(coef: bigint, exp: number): [bigint, number] {
+  const drop = coef.toString().length - DEC_PREC;
+  if (drop <= 0) return [coef, exp];
+  const unit = pow10(drop);
+  let q = coef / unit;
+  const rest = coef - q * unit;
+  const half = unit / 2n;
+  if (rest > half || (rest === half && q % 2n === 1n)) q += 1n;
+  return [q, exp + drop];
+}
+
+/** A non-negative whole number rounded to DEC_PREC significant digits. */
+function roundSig(n: bigint): bigint {
+  const [coef, exp] = roundCoef(n, 0);
+  return coef * pow10(exp);
+}
+
+function syntaxError(): PyError {
+  return new PyError('InvalidOperation', "[<class 'decimal.ConversionSyntax'>]");
+}
+
+/** Decimal(s): Python strips whitespace and every "_", and reads any Unicode decimal digit. */
+function parseDecimal(text: string): Dec {
+  let s = '';
+  for (const ch of pyStripSpace(text)) {
+    if (ch === '_') continue;
+    if (ch.charCodeAt(0) < 128) {
+      s += ch;
+      continue;
     }
-    if (div === ONE) {
-      out.push({ text: 'one', num: ONE });
-    } else {
-      // Python's "tallying" branch (div == value) needs a card of 1 to be used with
-      // value > 1, which English never does (2..20 all have their own card).
-      if (div === value) throw new PyError('TypeError', 'tally branch is not reachable in English');
-      out.push(splitnum(div));
-    }
-    out.push({ text: CARD_WORDS[i], num: elem });
-    if (mod !== ZERO) out.push(splitnum(mod));
-    return out;
+    const d = decimalValue(ch);
+    if (d < 0) throw syntaxError();
+    s += String(d);
   }
-  throw new PyError('TypeError', `cannot split ${value}`);
-}
-
-/** splitnum() on a Python float holding an integer >= 2^53: float divmod, int keys. */
-function splitnumFloat(value: number): Item[] {
-  const exact = BigInt(value); // for the exact int/float comparison Python does
-  for (let i = 0; i < CARD_NUMS.length; i++) {
-    const elem = CARD_NUMS[i];
-    if (elem > exact) continue;
-    const out: Item[] = [];
-    let div: number;
-    let mod: number;
-    if (value === 0) {
-      div = 1;
-      mod = 0;
-    } else {
-      [div, mod] = floatDivmod(value, CARD_FLOATS[i]);
-    }
-    if (div === 1) {
-      out.push({ text: 'one', num: ONE });
-    } else {
-      if (div === value) throw new PyError('TypeError', 'tally branch is not reachable in English');
-      out.push(div < TWO_53 ? splitnum(BigInt(div)) : splitnumFloat(div));
-    }
-    out.push({ text: CARD_WORDS[i], num: elem });
-    if (mod !== 0) out.push(mod < TWO_53 ? splitnum(BigInt(mod)) : splitnumFloat(mod));
-    return out;
+  const num = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(s);
+  if (num && (num[2] || num[3])) {
+    const frac = num[3] ?? '';
+    const coef = BigInt(num[2] + frac || '0');
+    return new Dec(num[1] === '-', coef, Number(num[4] ?? '0') - frac.length);
   }
-  throw new PyError('TypeError', `cannot split ${value}`);
-}
-
-/** Num2Word_EN.merge */
-function merge(l: Pair, r: Pair): Pair {
-  const ln = l.num;
-  const rn = r.num;
-  if (ln === ONE && rn < HUNDRED) return { text: r.text, num: rn };
-  if (HUNDRED > ln && ln > rn) return { text: `${l.text}-${r.text}`, num: ln + rn };
-  if (ln >= HUNDRED && HUNDRED > rn) return { text: `${l.text} and ${r.text}`, num: ln + rn };
-  if (rn > ln) return { text: `${l.text} ${r.text}`, num: ln * rn };
-  return { text: `${l.text}, ${r.text}`, num: ln + rn };
-}
-
-/** Num2Word_Base.clean, step for step (it nests the unmerged tail as one list). */
-function clean(val: Item[]): Item {
-  let out: Item[] = val;
-  while (val.length !== 1) {
-    out = [];
-    const left = val[0];
-    const right = val[1];
-    if (!Array.isArray(left) && !Array.isArray(right)) {
-      out.push(merge(left, right));
-      if (val.length > 2) out.push(val.slice(2));
-    } else {
-      for (const elem of val) {
-        if (Array.isArray(elem)) {
-          out.push(elem.length === 1 ? elem[0] : clean(elem));
-        } else {
-          out.push(elem);
-        }
-      }
-    }
-    val = out;
+  const sp = /^([+-]?)(?:(inf|infinity)|(s?nan)\d*)$/i.exec(s);
+  if (sp) {
+    const kind = sp[2] ? 'inf' : sp[3].toLowerCase() === 'snan' ? 'snan' : 'nan';
+    return new Dec(sp[1] === '-', 0n, 0, kind);
   }
-  return out[0];
+  throw syntaxError();
 }
 
-function words(item: Item): string {
-  if (Array.isArray(item)) throw new PyError('TypeError', 'clean() did not reduce to one pair');
-  return item.text;
-}
-
-function cardinalInt(value: bigint): string {
-  let out = '';
-  if (value < ZERO) {
-    value = -value;
-    out = 'minus ';
+/** divmod(d, 100) for a finite Dec >= 0. */
+function decDivmod100(d: Dec): [Dec, Dec] {
+  // The quotient may have at most DEC_PREC digits (else DivisionImpossible).
+  if (d.magnitude() > DEC_PREC + 2) throw new PyError('InvalidOperation', "[<class 'decimal.DivisionImpossible'>]");
+  if (d.exp >= 0) {
+    const n = d.intPart();
+    return [new Dec(false, n / 100n, 0), new Dec(false, n % 100n, 0)];
   }
-  if (value >= MAXVAL) {
-    throw new PyError('OverflowError', `abs(${value}) must be less than ${MAXVAL}.`);
+  if (d.magnitude() <= 2) return [new Dec(false, 0n, 0), d.abs()];
+  const unit = 100n * pow10(-d.exp);
+  const q = d.coef / unit;
+  const [coef, exp] = roundCoef(d.coef - q * unit, d.exp);
+  return [new Dec(false, q, 0), new Dec(false, coef, exp)];
+}
+
+// ---------------------------------------------------------------------------
+// The three modes, for each kind of Python number
+
+type PyNumber = bigint | number | Dec;
+
+function cardinal(x: PyNumber): string {
+  if (typeof x === 'bigint') {
+    if ((x < 0n ? -x : x) >= LIMIT) throw overflow();
+    return x < 0n ? `minus ${wordsInt(-x, false)}` : wordsInt(x, false);
   }
-  return out + words(clean(splitnum(value)));
-}
-
-function cardinalFloat(value: number): string {
-  // to_cardinal_float + float2tuple
-  const pre = Math.trunc(value);
-  const precision = reprDecimalPlaces(value);
-  const scale = Number('1e' + precision); // float(10 ** precision)
-  if (!Number.isFinite(scale)) throw new PyError('OverflowError', 'int too large to convert to float');
-  const post = Math.abs(value - pre) * scale;
-  const rounded = roundHalfEven(post);
-  const postInt = Math.abs(rounded - post) < 0.01 ? BigInt(rounded) : BigInt(Math.floor(post));
-  let digits = postInt.toString();
-  digits = '0'.repeat(Math.max(0, precision - digits.length)) + digits;
-
-  const out = [cardinalInt(BigInt(pre))];
-  if (precision) out.push('point');
-  for (let i = 0; i < precision; i++) out.push(cardinalInt(BigInt(Number(digits[i]))));
-  return out.join(' ');
-}
-
-function cardinalNumber(value: number): string {
-  if (Number.isNaN(value)) throw new PyError('ValueError', 'cannot convert float NaN to integer');
-  if (!Number.isFinite(value)) throw new PyError('OverflowError', 'cannot convert float infinity to integer');
-  if (!Number.isInteger(value)) return cardinalFloat(value);
-  let out = '';
-  if (value < 0) {
-    value = -value;
-    out = 'minus ';
+  if (typeof x === 'number') {
+    if (floatOverLimit(x)) throw overflow();
+    if (Number.isNaN(x)) floatToInt(x); // int(nan): ValueError
+    if (!Number.isInteger(x)) return pointWords(x);
+    return x < 0 ? `minus ${wordsFloat(-x)}` : wordsFloat(x);
   }
-  if (BigInt(value) >= MAXVAL) {
-    throw new PyError('OverflowError', `abs(${value}) must be less than ${MAXVAL}.`);
+  if (x.special === 'nan') throw new PyError('ValueError', 'cannot convert float NaN to integer');
+  if (x.special === 'snan') throw new PyError('TypeError', 'type(sNaN) not in [long, int, float]');
+  if (x.special === 'inf') throw new PyError('OverflowError', 'cannot convert Infinity to integer');
+  if (x.magnitude() > LIMIT_EXP) throw overflow();
+  if (!x.isWhole()) return pointWords(x.toFloat());
+  // "minus" + the cardinal of abs(d), which Decimal rounds to 28 digits (it can round up
+  // to the limit).
+  if (x.isNegative()) return `minus ${cardinal(x.abs())}`;
+  return wordsInt(x.intPart(), true);
+}
+
+function negativeOrdinal(): PyError {
+  return new PyError('TypeError', 'Cannot treat negative num as ordinal.');
+}
+
+function ordinal(x: PyNumber): string {
+  if (typeof x === 'bigint') {
+    if (x < 0n) throw negativeOrdinal();
+    if (x >= LIMIT) throw overflow();
+    return ordinalize(wordsInt(x, false));
   }
-  // below 2^53 float divmod is exact, so the int path gives the same words
-  return out + words(clean(value < TWO_53 ? splitnum(BigInt(value)) : splitnumFloat(value)));
-}
-
-function toCardinal(value: bigint | number): string {
-  return typeof value === 'bigint' ? cardinalInt(value) : cardinalNumber(value);
-}
-
-function verifyOrdinal(value: bigint | number): void {
-  if (typeof value === 'bigint') {
-    if (value < ZERO) throw new PyError('TypeError', `Cannot treat negative num ${value} as ordinal.`);
-    return;
+  if (typeof x === 'number') {
+    floatToInt(x); // int(x) comes first: nan and inf fail here
+    if (!Number.isInteger(x)) throw new PyError('TypeError', 'Cannot treat float as ordinal.');
+    if (x < 0) throw negativeOrdinal();
+    if (floatOverLimit(x)) throw overflow();
+    return ordinalize(wordsFloat(x));
   }
-  floatToInt(value); // int(value) raises for nan / inf
-  if (!Number.isInteger(value)) throw new PyError('TypeError', `Cannot treat float ${value} as ordinal.`);
-  if (value < 0) throw new PyError('TypeError', `Cannot treat negative num ${value} as ordinal.`);
+  if (x.special === 'inf') throw new PyError('OverflowError', 'cannot convert Infinity to integer');
+  if (x.special) throw new PyError('ValueError', 'cannot convert NaN to integer');
+  if (!x.isWhole()) throw new PyError('TypeError', 'Cannot treat float as ordinal.');
+  // Python checks abs(n) != n, and Decimal's abs() rounds to 28 digits.
+  if (x.isNegative() || !x.absIsExact()) throw negativeOrdinal();
+  if (x.magnitude() > LIMIT_EXP) throw overflow();
+  return ordinalize(wordsInt(x.intPart(), true));
 }
 
-function toOrdinal(value: bigint | number): string {
-  verifyOrdinal(value);
-  const outwords = toCardinal(value).split(' ');
-  const lastwords = outwords[outwords.length - 1].split('-');
-  let lastword = lastwords[lastwords.length - 1].toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(ORDS, lastword)) {
-    lastword = ORDS[lastword];
+/** divmod(n, 100) of a year and the tests the year rule makes on it. */
+interface YearParts {
+  n: PyNumber;
+  high: PyNumber;
+  low: PyNumber;
+  highIsZero: boolean;
+  highEndsInZero: boolean;
+  highOver99: boolean;
+  lowIsZero: boolean;
+  lowUnder10: boolean;
+}
+
+function yearWords(p: YearParts): string {
+  if (p.highIsZero || (p.highEndsInZero && p.lowUnder10) || p.highOver99) return cardinal(p.n);
+  if (p.lowIsZero) return `${cardinal(p.high)} hundred`;
+  return `${cardinal(p.high)} ${p.lowUnder10 ? 'oh-' : ''}${cardinal(p.low)}`;
+}
+
+function year(x: PyNumber): string {
+  let bc: boolean;
+  let parts: YearParts;
+  if (typeof x === 'bigint') {
+    bc = x < 0n;
+    const n = bc ? -x : x;
+    const high = n / 100n;
+    const low = n % 100n;
+    parts = {
+      n, high, low, highIsZero: high === 0n, highEndsInZero: high % 10n === 0n,
+      highOver99: high >= 100n, lowIsZero: low === 0n, lowUnder10: low < 10n,
+    };
+  } else if (typeof x === 'number') {
+    // Python float divmod: inf and nan give nan parts, and cardinal(nan) is a ValueError.
+    bc = x < 0;
+    const n = bc ? -x : x;
+    const [high, low] = floatDivmod(n, 100);
+    parts = {
+      n, high, low, highIsZero: high === 0, highEndsInZero: floatMod(high, 10) === 0,
+      highOver99: high >= 100, lowIsZero: low === 0, lowUnder10: low < 10,
+    };
   } else {
-    if (lastword[lastword.length - 1] === 'y') lastword = lastword.slice(0, -1) + 'ie';
-    lastword += 'th';
+    // Decimal: divmod of inf and ordering tests on nan are InvalidOperation.
+    if (x.special) throw new PyError('InvalidOperation', "[<class 'decimal.InvalidOperation'>]");
+    bc = x.isNegative();
+    const n = bc ? x.abs() : x;
+    const [high, low] = decDivmod100(n);
+    parts = {
+      n, high, low, highIsZero: high.isZero(), highEndsInZero: high.coef % 10n === 0n,
+      highOver99: high.cmp(100) >= 0, lowIsZero: low.isZero(), lowUnder10: low.cmp(10) < 0,
+    };
   }
-  lastwords[lastwords.length - 1] = lastword;
-  outwords[outwords.length - 1] = lastwords.join('-');
-  return outwords.join(' ');
-}
-
-function toYear(val: bigint | number): string {
-  let suffix: string | null = null;
-  let valtext: string;
-  if (typeof val === 'bigint') {
-    if (val < ZERO) {
-      val = -val;
-      suffix = 'BC';
-    }
-    const high = val / HUNDRED;
-    const low = val % HUNDRED;
-    if (high === ZERO || (high % TEN === ZERO && low < TEN) || high >= HUNDRED) {
-      valtext = cardinalInt(val);
-    } else {
-      const hightext = cardinalInt(high);
-      const lowtext = low === ZERO ? 'hundred' : low < TEN ? `oh-${cardinalInt(low)}` : cardinalInt(low);
-      valtext = `${hightext} ${lowtext}`;
-    }
-  } else {
-    if (val < 0) {
-      val = Math.abs(val);
-      suffix = 'BC';
-    }
-    const [high, low] = floatDivmod(val, 100);
-    if (high === 0 || (floatDivmod(high, 10)[1] === 0 && low < 10) || high >= 100) {
-      valtext = cardinalNumber(val);
-    } else {
-      const hightext = cardinalNumber(high);
-      const lowtext = low === 0 ? 'hundred' : low < 10 ? `oh-${cardinalNumber(low)}` : cardinalNumber(low);
-      valtext = `${hightext} ${lowtext}`;
-    }
-  }
-  return suffix ? `${valtext} ${suffix}` : valtext;
+  const words = yearWords(parts);
+  return bc ? `${words} BC` : words;
 }
 
 /**
- * num2words(value, lang='en', to=...).
- *
- * - `bigint` is a Python int, `number` a Python float (an integral number below 2^53
- *   spells the same either way).
- * - A string is read the way the Python callers build their arguments: an integer
- *   string as int(s) (any length), anything else as float(s).
+ * num2words(value, to=...) for lang "en". A bigint stands for a Python int, a number for a
+ * Python float, and a string is read as Python's Decimal(string) would read it.
  */
 export function num2words(value: number | bigint | string, to: Num2WordsTo = 'cardinal'): string {
-  let v: number | bigint;
-  if (typeof value === 'string') {
-    const s = value.trim();
-    if (/^[+-]?[0-9]+$/.test(s)) {
-      v = BigInt(s);
-    } else {
-      v = Number(s);
-      if (Number.isNaN(v) && !/^[+-]?nan$/i.test(s)) {
-        throw new PyError('ValueError', `could not convert string to float: '${value}'`);
-      }
-    }
-  } else {
-    v = value;
-  }
-  switch (to) {
-    case 'cardinal':
-      return toCardinal(v);
-    case 'ordinal':
-      return toOrdinal(v);
-    case 'year':
-      return toYear(v);
-    default:
-      throw new PyError('NotImplementedError', `to='${String(to)}'`);
-  }
+  let x: PyNumber;
+  if (typeof value === 'bigint' || typeof value === 'number') x = value;
+  else if (typeof value === 'string') x = parseDecimal(value);
+  else throw new PyError('TypeError', `type(${String(value)}) not in [long, int, float]`);
+  if (to === 'cardinal') return cardinal(x);
+  if (to === 'ordinal') return ordinal(x);
+  if (to === 'year') return year(x);
+  throw new PyError('NotImplementedError', `to=${String(to)} is not supported`);
 }
