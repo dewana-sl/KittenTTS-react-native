@@ -61,9 +61,36 @@ The package runs `scripts/patch-onnxruntime-react-native.js` during
 `postinstall` to apply known compatibility fixes for
 `onnxruntime-react-native`.
 
+Some package managers skip a dependency's install scripts unless you allow them
+(pnpm 10's `onlyBuiltDependencies`, Bun's `trustedDependencies`). Without the
+patch, iOS builds on React Native 0.88 (Expo SDK 58) fail with
+`unknown type name 'RCTCxxBridge'`. Allow `@kittentts/react-native`'s script, or
+run it from the app's root after installing, then rerun `pod install`:
+
+```bash
+node node_modules/@kittentts/react-native/scripts/patch-onnxruntime-react-native.js
+```
+
 On Android, the SDK's own `android/` package registers ONNX Runtime. This avoids
 the common `Cannot read property 'install' of null` crash when ONNX Runtime is
 compiled but not added to `MainApplication`.
+
+In a bare React Native app, iOS needs `onnxruntime-react-native` in the app's own
+`package.json`, because React Native CLI links only direct dependencies. Without
+it `create()` fails on iOS because the ONNX Runtime module is missing; see
+[Bare React Native](getting-started.md#bare-react-native). Expo links it on its
+own.
+
+## The App Closes At Launch On iOS 27
+
+Apps built with the iOS 27 SDK (Xcode 27) must use the scene lifecycle, or iOS
+stops them at launch (`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`
+in the crash report). This is not about KittenTTS, but older templates hit it:
+Expo SDK 54 and 55 and React Native 0.81's `RCTAppDelegate`. Move to Expo SDK
+58, or create the window in a `SceneDelegate` and add
+`UIApplicationSceneManifest` to `Info.plist`, as
+[`examples/BareRNExample`](../examples/BareRNExample/ios/BasicExample/AppDelegate.mm)
+does.
 
 ## Bundled Assets Are Missing In The App
 

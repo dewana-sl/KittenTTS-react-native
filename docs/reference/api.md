@@ -31,6 +31,27 @@ const tts = await KittenTTS.create(options, (progress, info) => {
 });
 ```
 
+With `model: 'kitten-tts-2-nano'`, `'kitten-tts-2-pico'` or `'kitten-tts-2-mini'`
+it returns a `KittenTTS2Tiny` instead: see
+[Kitten TTS 2 Nano, Pico and Mini](../guides/kitten-tts-2-tiny.md) for its options
+(`weights`, `languages`, `modelDirectory`, `textDataDirectory`, `hfToken`, ...) and
+methods (`generate(text, { voice, language, speed })`, `generateStreaming`,
+`generateToFile`, `phonemize`, `voices`, `availableVoices`, `onnxWeights`).
+
+With `model: 'kitten-tts-2-cloud'` (or `'kitten-tts-2'`), or any Kitten TTS 2 model and an `apiKey` or
+`baseUrl`, it returns a `KittenTTS2`, which runs on the Kitten API: see the
+[Kitten API guide](../guides/kitten-api.md). The model picks the engine, as in the
+Python package:
+
+| `model` | Without a key | With `apiKey` or `baseUrl` |
+| --- | --- | --- |
+| 0.8 models (default) | `KittenTTS`, on the device | `KittenTTS`, on the device |
+| `'kitten-tts-2-nano'`, `'-pico'`, `'-mini'` | `KittenTTS2Tiny`, on the device | `KittenTTS2`, on the API |
+| `'kitten-tts-2-cloud'` (or `'kitten-tts-2'`) | error: it runs on the API only | `KittenTTS2`, on the API |
+
+All three have `generate()`, `generateStreaming()`, `speak()`, `play()`,
+`stopSpeaking()` and `dispose()`.
+
 ## Common Options
 
 | Option | Default | Description |
@@ -106,6 +127,52 @@ await tts.play(result, {
 | `wavData()` | Complete 16-bit PCM WAV as `Uint8Array` |
 | `wavBase64()` | Complete WAV as a base64 string |
 
+## Kitten TTS 2 Cloud: `KittenTTS2`
+
+`KittenTTS.create({ model: 'kitten-tts-2-cloud', ... })` returns a `KittenTTS2`:
+Kitten TTS 2 Cloud (and Nano, Pico and Mini with a key) running on the hosted Kitten API, with the same calls as above.
+See the [Kitten API guide](../guides/kitten-api.md).
+
+```tsx
+const tts = await KittenTTS.create({
+  model: 'kitten-tts-2-cloud',
+  apiKey: KITTENML_API_KEY,
+  player: createExpoAudioPlayer(ExpoAudio),
+});
+
+await tts.generate('Hello.', 'bella_en');
+await tts.generate('Hello.', { reference: recordingUri, preset: 'stable' });
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `model` | required | `'kitten-tts-2-cloud'` or `'kitten-tts-2'` (Kitten TTS 2 Cloud), `'kitten-tts-2-nano'`, `'-pico'`, `'-mini'`, or a model ID the API lists, such as `'kitten-tts-2-latest'` |
+| `apiKey` | none | Kitten API key; for development, see the guide |
+| `baseUrl` | `https://api.kittenml.com/v1` | API root, or your own backend that adds the key |
+| `headers` | none | Extra headers sent with every request |
+| `defaultVoice` | the API's default | Voice used when a call names none |
+| `speed` | `1.0` | Speed from `0.25` to `4.0` |
+| `timeoutMs` | `300000` | Per-request timeout; streams are timed until they start |
+| `maxRetries` | `2` | Retries for `429` and `5xx` responses |
+| `fetch` | global `fetch` | Replacement `fetch`, e.g. from `expo/fetch` to stream on iOS and Android |
+| `player` | none | Required for `speak()` and `play()` |
+
+| Member | Description |
+| --- | --- |
+| `generate(text, voice?, speed?)` | Complete speech as a `KittenTTSResult<string>` |
+| `generate(text, options)` | With `voice` or `reference`, `referenceText`, `preset`, `temperature`, `topK`, `topP`, `minP`, `maxNewTokens`, `normalize`, `speed`, `signal` |
+| `generateStreaming(text, voice?, speed?)` or `(text, options)` | Yields chunks while generating, cut at pauses |
+| `speak(...)`, `play(result)`, `stopSpeaking()` | As on the device |
+| `availableVoices` | Voice IDs accepted by `voice` |
+| `voices` | `{ id, name, language, type, experimental }` for each voice |
+| `model` | Model ID sent to the API |
+| `sampleRate` | `24000` |
+| `dispose()` | Cancels requests in flight and stops playback |
+
+`KittenTTSResult<string>` has the same members as an on-device result; its
+`voice` is the voice ID sent, or `''` when the API chose the voice or it was
+cloned from `reference`, and `wordTimings` is empty.
+
 ## Cache Methods
 
 | Method | Description |
@@ -133,6 +200,18 @@ as normal filesystem paths.
 ```tsx
 const config = await createBundledAssetConfig(manifest, {
   model: KittenModel.NanoInt8,
+});
+```
+
+For bundled Kitten TTS 2 Nano, Pico or Mini, `createBundledTinyOptions(manifest,
+{ model })` returns the `KittenTTS.create()` options (`model`, `weights`,
+`languages`, `modelDirectory`, `textDataDirectory`), and `bundledTinyModels(manifest)`
+lists them:
+
+```tsx
+const tts = await KittenTTS.create({
+  ...(await createBundledTinyOptions(manifest, { model: 'kitten-tts-2-nano' })),
+  player,
 });
 ```
 
@@ -165,3 +244,12 @@ try {
 | `PHONEMIZER_FAILED` | Text-to-phoneme conversion failed |
 | `INFERENCE_FAILED` | ONNX Runtime setup or inference failed |
 | `PLAYBACK_FAILED` | Audio playback failed |
+| `INVALID_ARGUMENT` | An option or argument was not valid: an unknown model, voice, language or weights, a bad speed, both `voice` and `reference`, `generateToFile()` in a browser |
+| `API_ERROR` | The Kitten API answered with an error (`KittenAPIError`) |
+| `NETWORK_ERROR` | The Kitten API could not be reached, or timed out (`KittenAPIError`) |
+| `CANCELLED` | A Kitten API request was cancelled by its `signal` or `dispose()` |
+| `UNSUPPORTED_RUNTIME` | The JavaScript engine lacks what Kitten TTS 2 Nano, Pico and Mini need (Hermes from React Native 0.75) |
+
+`KittenAPIError` also carries `status`, `apiCode` (the API's own code, such as
+`invalid_voice`), `param`, `requestId` and `retryAfter`. Check for it with
+`isKittenAPIError(error)`.
